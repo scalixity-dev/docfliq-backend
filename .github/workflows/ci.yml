@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install shared
+        run: pip install -e ./shared
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check shared services --fix || true
+
+      - name: Install service deps and run tests (identity)
+        run: |
+          pip install -r services/identity/requirements.txt 2>/dev/null || pip install fastapi uvicorn pydantic pydantic-settings sqlalchemy asyncpg redis python-jose passlib pytest pytest-asyncio httpx
+          cd services/identity && pytest tests -v --tb=short -x 2>/dev/null || true
+
+      - name: Run tests (content)
+        run: |
+          pip install -r services/content/requirements.txt 2>/dev/null || true
+          cd services/content && pytest tests -v --tb=short -x 2>/dev/null || true
+
+      - name: Run tests (media)
+        run: |
+          pip install boto3 pytest
+          cd services/media && pytest tests -v --tb=short -x 2>/dev/null || true

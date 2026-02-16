@@ -1,0 +1,20 @@
+name: Deploy to PROD
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform init and plan (PROD)
+        run: |
+          cd infra/environments/prod
+          terraform init -input=false
+          terraform plan -input=false -no-color || true
+
+      - name: Deploy note
+        run: echo "Add manual approval and terraform apply for production"

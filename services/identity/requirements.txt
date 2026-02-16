@@ -1,0 +1,12 @@
+# Identity service — FastAPI + shared
+fastapi>=0.109
+uvicorn[standard]>=0.27
+pydantic>=2.5
+pydantic-settings>=2.1
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.29
+redis>=5.0
+python-jose[cryptography]>=3.3
+passlib[argon2]>=1.7
+# Editable install of shared from repo root: pip install -e ../../shared
+-e ../../shared

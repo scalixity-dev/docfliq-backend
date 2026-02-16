@@ -1,0 +1,27 @@
+name: Deploy to DEV
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS (placeholder)
+        run: |
+          echo "Configure AWS credentials (e.g. aws-actions/configure-aws-credentials) for ECR and Terraform"
+          # aws configure ...
+
+      - name: Terraform init and plan (dev)
+        run: |
+          cd infra/environments/dev
+          terraform init -input=false
+          terraform plan -input=false -no-color || true
+
+      - name: Deploy note
+        run: |
+          echo "Add terraform apply and ECR push when AWS is configured"

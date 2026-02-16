@@ -1,0 +1,63 @@
+# Dev overrides: volume mounts, debug ports, env
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: "3.9"
+
+services:
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/identity/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+      DOCS_URL: /docs
+    ports:
+      - "8001:8000"
+
+  content:
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/content/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+    ports:
+      - "8002:8000"
+
+  course:
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/course/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+    ports:
+      - "8003:8000"
+
+  webinar:
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/webinar/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+    ports:
+      - "8004:8000"
+
+  payment:
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/payment/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+    ports:
+      - "8005:8000"
+
+  platform:
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/platform/app:/app/app:ro
+    environment:
+      ENV_NAME: development
+    ports:
+      - "8006:8000"

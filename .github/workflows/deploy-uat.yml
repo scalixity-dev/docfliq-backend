@@ -1,0 +1,20 @@
+name: Deploy to UAT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-uat:
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform init and plan (UAT)
+        run: |
+          cd infra/environments/uat
+          terraform init -input=false
+          terraform plan -input=false -no-color || true
+
+      - name: Deploy note
+        run: echo "Add apply step when ready"
