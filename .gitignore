@@ -4,7 +4,7 @@
 .env.dev
 *.pem
 .certs/
-
+.claude/
 # Python
 __pycache__/
 *.py[cod]
