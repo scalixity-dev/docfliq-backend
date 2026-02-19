@@ -1,8 +1,9 @@
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.asyncio import Redis
 
 from app.config import Settings
 
@@ -34,6 +35,16 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+
+async def get_redis(request: Request) -> Redis:
+    """Return the shared Redis client stored on app.state at startup."""
+    return request.app.state.redis
+
+
+async def get_opensearch(request: Request):
+    """Return the shared AsyncOpenSearch client, or None if OpenSearch is disabled."""
+    return getattr(request.app.state, "opensearch", None)
 
 
 async def get_optional_user(

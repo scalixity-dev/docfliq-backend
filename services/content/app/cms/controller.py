@@ -7,6 +7,7 @@ and composes Pydantic response models.
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cms import service
@@ -14,6 +15,7 @@ from app.cms.exceptions import (
     ChannelAccessDeniedError,
     ChannelNotFoundError,
     ChannelSlugTakenError,
+    DuplicateContentError,
     PostAccessDeniedError,
     PostNotFoundError,
     PostNotPublishableError,
@@ -42,9 +44,13 @@ async def create_post(
     payload: CreatePostRequest,
     author_id: UUID,
     db: AsyncSession,
+    redis: Redis | None = None,
 ) -> PostResponse:
     """Create a new post and return the full representation."""
-    post = await service.create_post(payload, author_id, db)
+    try:
+        post = await service.create_post(payload, author_id, db, redis=redis)
+    except DuplicateContentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return PostResponse.model_validate(post)
 
 

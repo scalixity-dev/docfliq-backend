@@ -1,16 +1,18 @@
 from contextlib import asynccontextmanager
 
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.database import init_db
 from app.cms.router import router as cms_router
+from app.experiments.router import router as experiments_router
 from app.feed.router import router as feed_router
-from app.search.router import router as search_router
 from app.interactions.router import router as interactions_router
-from shared.middleware.request_id import request_id_middleware
+from app.search.router import router as search_router
 from shared.middleware.error_handler import error_envelope_middleware
+from shared.middleware.request_id import request_id_middleware
 
 # Swagger tag groups displayed in the OpenAPI docs sidebar
 _OPENAPI_TAGS = [
@@ -45,6 +47,16 @@ _OPENAPI_TAGS = [
         ),
     },
     {
+        "name": "Experiments",
+        "description": (
+            "Cohort management and A/B experimentation for feed algorithm weights. "
+            "Cohorts define user segments with custom feed scoring. "
+            "Experiments split cohort traffic across variants with different algorithm configs. "
+            "Variant assignment is deterministic (SHA-256 hash) — no server-side storage. "
+            "Results include 95% Wilson CI for CTR and normal-approximation CI for session metrics."
+        ),
+    },
+    {
         "name": "Health",
         "description": "Liveness and readiness probes.",
     },
@@ -59,7 +71,28 @@ def get_settings() -> Settings:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     init_db(settings.content_database_url)
+    redis_client = aioredis.from_url(
+        settings.redis_url, encoding="utf-8", decode_responses=True
+    )
+    app.state.redis = redis_client
+
+    # OpenSearch client (optional — disabled when opensearch_enabled=False)
+    app.state.opensearch = None
+    if settings.opensearch_enabled:
+        from opensearchpy import AsyncOpenSearch
+        os_client = AsyncOpenSearch(
+            hosts=[settings.opensearch_url],
+            use_ssl=settings.opensearch_url.startswith("https"),
+            verify_certs=False,
+            http_compress=True,
+        )
+        app.state.opensearch = os_client
+
     yield
+
+    await redis_client.aclose()
+    if app.state.opensearch is not None:
+        await app.state.opensearch.close()
 
 
 def create_app() -> FastAPI:
@@ -95,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(feed_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(interactions_router, prefix="/api/v1")
+    app.include_router(experiments_router, prefix="/api/v1")
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict:

@@ -59,6 +59,23 @@ class SharePlatform(str, enum.Enum):
     COPY_LINK = "COPY_LINK"
 
 
+class ExperimentStatus(str, enum.Enum):
+    DRAFT = "DRAFT"          # Created but not yet running
+    RUNNING = "RUNNING"      # Active, traffic is being split
+    PAUSED = "PAUSED"        # Temporarily halted
+    COMPLETED = "COMPLETED"  # Concluded (manually or by end date)
+
+
+class ExperimentEventType(str, enum.Enum):
+    IMPRESSION = "IMPRESSION"        # Post shown in feed
+    CLICK = "CLICK"                  # User tapped on post
+    LIKE = "LIKE"                    # Liked a post in this session
+    COMMENT = "COMMENT"              # Commented on a post in this session
+    SHARE = "SHARE"                  # Shared a post in this session
+    SESSION_START = "SESSION_START"  # User opened feed tab
+    SESSION_END = "SESSION_END"      # User left feed tab (carries session_duration_s)
+
+
 # SQLAlchemy PgEnum instances (reuse across models to avoid duplicate type creation)
 content_type_enum = PgEnum(ContentType, name="content_type", create_type=True)
 post_visibility_enum = PgEnum(PostVisibility, name="post_visibility", create_type=True)
@@ -67,3 +84,7 @@ comment_status_enum = PgEnum(CommentStatus, name="comment_status", create_type=T
 like_target_type_enum = PgEnum(LikeTargetType, name="like_target_type", create_type=True)
 report_target_type_enum = PgEnum(ReportTargetType, name="report_target_type", create_type=True)
 report_status_enum = PgEnum(ReportStatus, name="report_status", create_type=True)
+experiment_status_enum = PgEnum(ExperimentStatus, name="experiment_status", create_type=True)
+experiment_event_type_enum = PgEnum(
+    ExperimentEventType, name="experiment_event_type", create_type=True
+)

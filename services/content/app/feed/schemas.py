@@ -61,3 +61,100 @@ class ChannelFeedResponse(BaseModel):
     limit: int
     offset: int
     channel_id: UUID = Field(description="Channel these posts belong to.")
+
+
+# ---------------------------------------------------------------------------
+# For You feed (ranked, offset-based within a 7-day candidate window)
+# ---------------------------------------------------------------------------
+
+
+class ForYouFeedResponse(BaseModel):
+    """Ranked personalised feed response.
+
+    Scoring: 40% recency decay (half-life 24 h) + 30% specialty tag overlap
+    + 30% author affinity from past interactions.
+
+    is_cold_start=True when the user has fewer than 10 interactions; the feed
+    is then composed of editor picks (20%), trending posts (40%), and
+    specialty-matched posts (40%) from onboarding interests.
+    """
+
+    items: list[PostSummary]
+    total: int = Field(description="Total scored candidates in the 7-day window.")
+    limit: int
+    offset: int
+    is_cold_start: bool = Field(
+        default=False,
+        description="True when cold-start logic was used instead of personalised ranking.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Following tab (cursor-based, strictly reverse-chronological)
+# ---------------------------------------------------------------------------
+
+
+class FollowingFeedResponse(BaseModel):
+    """Cursor-paginated feed of posts from followed accounts.
+
+    Hard cap: 500 posts per feed session. When is_exhausted=True the client
+    should show 'You are all caught up'.
+    """
+
+    items: list[PostSummary]
+    next_cursor: str | None = Field(
+        default=None,
+        description=(
+            "Opaque cursor for the next page. Pass as the `cursor` query param. "
+            "Null when there are no more posts or the 500-post hard cap is reached."
+        ),
+    )
+    has_more: bool
+    is_exhausted: bool = Field(
+        default=False,
+        description="True when the 500-post session hard cap has been reached.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trending feed
+# ---------------------------------------------------------------------------
+
+
+class TrendingFeedResponse(BaseModel):
+    """Top-engagement posts in the last 48 hours, cached for 5 minutes."""
+
+    items: list[PostSummary]
+    cached: bool = Field(
+        default=False,
+        description="True when the response was served from the Redis cache.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Editor Picks
+# ---------------------------------------------------------------------------
+
+
+class EditorPickCreate(BaseModel):
+    """Request body for adding a post to the editor-picks list."""
+
+    post_id: UUID
+    priority: int = Field(
+        default=0,
+        ge=0,
+        description="Display priority — lower integer shown first (0 = highest).",
+    )
+
+
+class EditorPickResponse(BaseModel):
+    """Response for a single editor pick record."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pick_id: UUID
+    post_id: UUID
+    added_by: UUID
+    priority: int
+    is_active: bool
+    created_at: datetime

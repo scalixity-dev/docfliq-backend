@@ -6,4 +6,5 @@ sqlalchemy[asyncio]>=2.0
 asyncpg>=0.29
 redis>=5.0
 PyJWT>=2.8
+opensearch-py>=2.0
 -e ../../shared

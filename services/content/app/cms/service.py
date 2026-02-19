@@ -1,14 +1,17 @@
 """CMS service — pure business logic, no FastAPI imports."""
 
+import hashlib
 import re
 import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.feed.cache import is_duplicate_content
 from app.models.channel import Channel
 from app.models.enums import PostStatus
 from app.models.post import Post
@@ -17,6 +20,7 @@ from app.cms.exceptions import (
     ChannelAccessDeniedError,
     ChannelNotFoundError,
     ChannelSlugTakenError,
+    DuplicateContentError,
     PostAccessDeniedError,
     PostNotFoundError,
     PostNotPublishableError,
@@ -99,11 +103,26 @@ async def get_post_for_viewer(
     return post
 
 
+def _compute_fingerprint(title: str | None, body: str | None) -> str:
+    """SHA-256 fingerprint of normalised post content for duplicate detection."""
+    raw = ((title or "") + " " + (body or "")).lower().strip()
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 async def create_post(
     payload: CreatePostRequest,
     author_id: UUID,
     db: AsyncSession,
+    redis: Redis | None = None,
 ) -> Post:
+    # Duplicate-content guard: same author, same content, within 60 seconds
+    if redis is not None:
+        fingerprint = _compute_fingerprint(payload.title, payload.body)
+        if await is_duplicate_content(fingerprint, author_id, redis):
+            raise DuplicateContentError(
+                "Duplicate post detected. The same content was submitted within the last 60 seconds."
+            )
+
     media = (
         [item.model_dump() for item in payload.media_urls]
         if payload.media_urls

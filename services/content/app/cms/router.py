@@ -6,11 +6,15 @@ dependencies. Zero business logic — delegates entirely to controller.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from redis.asyncio import Redis
+
+from app.config import Settings
 from app.database import get_db
-from app.dependencies import get_current_user, get_optional_user
+from app.dependencies import get_current_user, get_opensearch, get_optional_user, get_redis, get_settings
+from app.search.indexer import delete_post_from_opensearch, sync_post_to_opensearch
 from app.cms import controller
 from app.cms.schemas import (
     ChannelResponse,
@@ -53,8 +57,9 @@ async def create_post(
     payload: CreatePostRequest,
     author_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> PostResponse:
-    return await controller.create_post(payload, author_id, db)
+    return await controller.create_post(payload, author_id, db, redis=redis)
 
 
 @router.get(
@@ -92,10 +97,19 @@ async def get_post(
 async def update_post(
     post_id: UUID,
     payload: UpdatePostRequest,
+    background_tasks: BackgroundTasks,
     author_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    os_client=Depends(get_opensearch),
+    settings: Settings = Depends(get_settings),
 ) -> PostResponse:
-    return await controller.update_post(post_id, payload, author_id, db)
+    response = await controller.update_post(post_id, payload, author_id, db)
+    # Re-index the updated post in OpenSearch (non-blocking)
+    if os_client is not None:
+        background_tasks.add_task(
+            sync_post_to_opensearch, response, os_client, settings.opensearch_index_prefix
+        )
+    return response
 
 
 @router.delete(
@@ -110,10 +124,18 @@ async def update_post(
 )
 async def delete_post(
     post_id: UUID,
+    background_tasks: BackgroundTasks,
     author_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    os_client=Depends(get_opensearch),
+    settings: Settings = Depends(get_settings),
 ) -> None:
     await controller.delete_post(post_id, author_id, db)
+    # Remove from OpenSearch index (non-blocking)
+    if os_client is not None:
+        background_tasks.add_task(
+            delete_post_from_opensearch, post_id, os_client, settings.opensearch_index_prefix
+        )
 
 
 @router.post(
@@ -128,10 +150,19 @@ async def delete_post(
 )
 async def publish_post(
     post_id: UUID,
+    background_tasks: BackgroundTasks,
     author_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    os_client=Depends(get_opensearch),
+    settings: Settings = Depends(get_settings),
 ) -> PostResponse:
-    return await controller.publish_post(post_id, author_id, db)
+    response = await controller.publish_post(post_id, author_id, db)
+    # Index the newly published post in OpenSearch (non-blocking)
+    if os_client is not None:
+        background_tasks.add_task(
+            sync_post_to_opensearch, response, os_client, settings.opensearch_index_prefix
+        )
+    return response
 
 
 @router.post(

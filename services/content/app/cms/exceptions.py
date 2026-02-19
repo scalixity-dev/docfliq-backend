@@ -38,3 +38,9 @@ class PostNotRestorableError(Exception):
     def __init__(self, version_number: int) -> None:
         self.version_number = version_number
         super().__init__(f"Version {version_number} not found for this post")
+
+
+class DuplicateContentError(Exception):
+    """Raised when a post with identical content was submitted within the last 60 seconds."""
+
+    pass
