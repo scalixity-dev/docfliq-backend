@@ -1,8 +1,20 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _env_files() -> list[str]:
+    """Load .env from backend root (when running from services/identity) then local .env."""
+    base = Path(__file__).resolve().parent.parent.parent.parent  # backend root
+    return [str(base / ".env"), ".env"]
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_env_files(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     identity_database_url: str = "postgresql+asyncpg://docfliq:changeme@localhost:5432/identity_db"
     redis_url: str = "redis://localhost:6379/0"
@@ -10,6 +22,31 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "docfliq-identity"
     jwt_audience: str = "docfliq-services"
-    jwt_expire_seconds: int = 3600
+    jwt_expire_seconds: int = 900              # 15 minutes (access token)
+    jwt_refresh_expire_seconds: int = 604_800  # 7 days (refresh token)
     env_name: str = "development"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # Comma-separated in .env (e.g. CORS_ORIGINS=http://localhost:3000,http://localhost:8080)
+    cors_origins: str = "http://localhost:3000"
+
+    # ── Brevo (transactional email) ────────────────────────────────────────────
+    brevo_api_key: str = ""
+    brevo_from_email: str = "noreply@docfliq.com"
+    brevo_from_name: str = "DOCFLIQ"
+    # Admin inbox — receives a notification whenever a new verification doc is submitted.
+    # Leave empty to disable admin notifications (e.g. in development).
+    admin_notification_email: str = ""
+
+    # ── App URLs ───────────────────────────────────────────────────────────────
+    # Used to build email verification links. No trailing slash.
+    app_base_url: str = "http://localhost:3000"
+
+    # ── AWS / S3 ───────────────────────────────────────────────────────────────
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    s3_bucket: str = "docfliq-user-content-prod"
+    s3_presigned_expiry_seconds: int = 900  # 15 min for PUT uploads
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [x.strip() for x in self.cors_origins.split(",") if x.strip()]
