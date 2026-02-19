@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,14 @@ class Post(Base):
         ForeignKey("channels.channel_id", ondelete="SET NULL"),
         nullable=True,
     )
+    # For REPOST content type: points to the original post (self-referential)
+    original_post_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("posts.post_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Set when status transitions to SOFT_DELETED; used for 30-day retention cleanup
+    deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -60,6 +68,11 @@ class Post(Base):
     comments = relationship("Comment", back_populates="post", lazy="noload")
     bookmarks = relationship("Bookmark", back_populates="post", lazy="noload")
     shares = relationship("Share", back_populates="post", lazy="noload")
+    versions = relationship("PostVersion", back_populates="post", lazy="noload")
+    # Self-referential: the original post this repost points to
+    original_post = relationship(
+        "Post", remote_side="Post.post_id", foreign_keys=[original_post_id], lazy="select"
+    )
 
     __table_args__ = (
         Index("ix_posts_author_id", "author_id"),

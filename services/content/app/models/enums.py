@@ -10,6 +10,7 @@ class ContentType(str, enum.Enum):
     LINK = "LINK"
     WEBINAR_CARD = "WEBINAR_CARD"
     COURSE_CARD = "COURSE_CARD"
+    REPOST = "REPOST"
 
 
 class PostVisibility(str, enum.Enum):
@@ -21,8 +22,9 @@ class PostVisibility(str, enum.Enum):
 class PostStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
-    HIDDEN = "HIDDEN"
-    DELETED = "DELETED"
+    EDITED = "EDITED"          # Published post that has been modified; shows 'edited' indicator
+    SOFT_DELETED = "SOFT_DELETED"      # Hidden, data retained 30 days; author can restore
+    HIDDEN_BY_ADMIN = "HIDDEN_BY_ADMIN"  # Admin action; author sees 'hidden' status, can appeal
 
 
 class CommentStatus(str, enum.Enum):
@@ -48,6 +50,13 @@ class ReportStatus(str, enum.Enum):
     REVIEWED = "REVIEWED"
     ACTIONED = "ACTIONED"
     DISMISSED = "DISMISSED"
+
+
+class SharePlatform(str, enum.Enum):
+    APP = "APP"
+    WHATSAPP = "WHATSAPP"
+    TWITTER = "TWITTER"
+    COPY_LINK = "COPY_LINK"
 
 
 # SQLAlchemy PgEnum instances (reuse across models to avoid duplicate type creation)

@@ -67,7 +67,11 @@ sudo apt install python3.12-venv jq -y
 make install-dev
 make install
 
-# 3. Start local Postgres + Redis (no docker-compose plugin needed)
+# 3. Install service-specific packages (uvicorn, PyJWT, etc.)
+#    make install silently skips these — run explicitly:
+.venv/bin/pip install -r services/content/requirements.txt
+
+# 4. Start local Postgres + Redis (no docker-compose plugin needed)
 make docker-up
 ```
 
@@ -143,42 +147,125 @@ CMS, feed, full-text search, and all social interactions on content.
 
 **Database**: `content_db`
 
-**Schema** (9 tables)
+**Schema** (10 tables)
 
 | Table | Purpose |
 |-------|---------|
 | `channels` | Institutional / sponsor channels |
-| `posts` | Main content posts (text, video, image, link, webinar card, course card) |
+| `posts` | Main content posts (text, video, image, link, webinar card, course card, repost) |
+| `post_versions` | Full edit history snapshots |
 | `comments` | Threaded comments (depth-2) on posts |
 | `likes` | Polymorphic likes on posts and comments |
 | `bookmarks` | User post bookmarks |
 | `shares` | Share tracking (platform: app / whatsapp / twitter / copy-link) |
-| `follows` | User follow graph |
 | `blocks` | User block list |
 | `reports` | Content and user reports |
 
-**Local DB setup (run once after `make docker-up`)**
+---
+
+#### Running the content service locally
+
+**Step 1 — Install dependencies** (once)
 
 ```bash
-# Apply migrations — creates all 9 tables in content_db
-cd migrations/content
-../../.venv/bin/alembic upgrade head
+# From repo root — installs uvicorn, PyJWT, asyncpg, etc.
+.venv/bin/pip install -r services/content/requirements.txt
+```
 
-# Verify tables exist
+**Step 2 — Start Postgres + Redis**
+
+```bash
+make docker-up
+# Starts docfliq-postgres (:5432) and docfliq-redis (:6379)
+```
+
+**Step 3 — Create the database and apply migrations** (once, or after model changes)
+
+```bash
+# Create content_db (skip if it already exists)
+docker exec docfliq-postgres psql -U docfliq -c "CREATE DATABASE content_db;" 2>/dev/null || true
+
+# Apply all migrations
+cd migrations/content && ../../.venv/bin/alembic upgrade head && cd ../..
+
+# Verify tables
 docker exec docfliq-postgres psql -U docfliq -d content_db -c "\dt"
 ```
 
-**Run**
+**Step 4 — Run the service**
+
 ```bash
 make run-content
-# → http://localhost:8002/docs
+# Starts uvicorn on http://0.0.0.0:8002 with hot-reload
 ```
 
+**Step 5 — Open API docs**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8002/docs` | Swagger UI — interactive, try endpoints live |
+| `http://localhost:8002/redoc` | ReDoc — read-optimised reference |
+| `http://localhost:8002/health` | Liveness probe → `{"status":"ok","service":"content"}` |
+
+---
+
+#### Testing the API
+
+**Generate a dev JWT token**
+
+All write endpoints require a `Bearer` token. Generate one against the default dev secret:
+
+```bash
+python3 -c "
+import jwt, datetime
+print(jwt.encode(
+  {'sub': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)},
+  'dev-secret', algorithm='HS256'
+))"
+```
+
+Copy the output. In Swagger UI click **Authorize** (top-right lock icon) and enter `Bearer <token>`.
+
+**Quick test sequence via Swagger**
+
+1. `GET /health` — confirm service is alive
+2. `POST /api/v1/cms/channels` — create a channel
+3. `POST /api/v1/cms/posts` — create a DRAFT post (`channel_id` from step 2)
+4. `POST /api/v1/cms/posts/{id}/publish` — publish it
+5. `GET /api/v1/feed` — confirm post appears in the public feed (no auth needed)
+6. `GET /api/v1/search/posts?q=your+title` — verify full-text search
+7. `POST /api/v1/interactions/posts/{id}/like` — like the post
+8. `PATCH /api/v1/cms/posts/{id}` — edit post → status becomes `EDITED`, version snapshot saved
+9. `GET /api/v1/cms/posts/{id}/versions` — view edit history
+
+**curl example**
+
+```bash
+TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode(
+  {'sub':'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp':datetime.datetime.utcnow()+datetime.timedelta(hours=24)},
+  'dev-secret',algorithm='HS256'))")
+
+# Create a channel
+curl -s -X POST http://localhost:8002/api/v1/cms/channels \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Channel","description":"My first channel"}' | python3 -m json.tool
+
+# Public feed (no auth needed)
+curl -s http://localhost:8002/api/v1/feed | python3 -m json.tool
+```
+
+---
+
 **Adding a new migration after changing models**
+
 ```bash
 cd migrations/content
 ../../.venv/bin/alembic revision --autogenerate -m "describe_your_change"
 ../../.venv/bin/alembic upgrade head
+cd ../..
 ```
 
 ---

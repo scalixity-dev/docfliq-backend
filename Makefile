@@ -1,6 +1,9 @@
 # Docfliq Backend — common targets
 # Run from repo root: docfliq-backend/
 
+-include .env
+export
+
 PYTHON ?= python3
 VENV ?= .venv
 BIN = $(VENV)/bin
@@ -85,22 +88,22 @@ seed:
 	$(BIN)/python scripts/seed-data.py 2>/dev/null || $(PYTHON) scripts/seed-data.py
 
 run-identity:
-	cd services/identity && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8001 2>/dev/null || cd services/identity && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/identity --host 0.0.0.0 --port 8001
 
 run-content:
-	cd services/content && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8002 2>/dev/null || cd services/content && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/content --host 0.0.0.0 --port 8002
 
 run-course:
-	cd services/course && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8003 2>/dev/null || cd services/course && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8003
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/course --host 0.0.0.0 --port 8003
 
 run-webinar:
-	cd services/webinar && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8004 2>/dev/null || cd services/webinar && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8004
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/webinar --host 0.0.0.0 --port 8004
 
 run-payment:
-	cd services/payment && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8005 2>/dev/null || cd services/payment && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8005
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/payment --host 0.0.0.0 --port 8005
 
 run-platform:
-	cd services/platform && $(BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8006 2>/dev/null || cd services/platform && $(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8006
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/platform --host 0.0.0.0 --port 8006
 
 clean:
 	rm -rf .ruff_cache .pytest_cache
