@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make docker-up:*)",
+      "Bash(../../.venv/bin/alembic revision:*)",
+      "Bash(../../.venv/bin/alembic upgrade:*)"
+    ]
+  }
+}

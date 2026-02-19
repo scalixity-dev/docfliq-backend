@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from shared.database.postgres import get_async_session_factory
 
+# Import all models so SQLAlchemy's Base.metadata is populated.
+# Required for Alembic autogenerate and create_all().
+import app.models  # noqa: F401
+
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 

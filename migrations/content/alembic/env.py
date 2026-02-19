@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-repo_root = Path(__file__).resolve().parents[2]
+# parents: [0]=alembic/  [1]=content/  [2]=migrations/  [3]=repo_root/
+repo_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "services" / "content"))
 
 from shared.database.postgres import Base  # noqa: E402
+import app.models  # noqa: E402, F401 — registers all ORM models with Base.metadata
 
 config = context.config
 if config.config_file_name is not None:

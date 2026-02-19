@@ -4,7 +4,7 @@ Monorepo backend for Docfliq: microservices (Identity, Content, Course, Webinar,
 
 ## Architecture
 
-- **Services**: FastAPI apps with domain-driven layout (router → controller → service). Each service has its own DB schema and optional Redis.
+- **Services**: FastAPI apps with domain-driven layout (router → service). Each service has its own database and optional Redis.
 - **Shared**: JWT auth, event schemas, Pydantic models, Postgres/Redis factories, middleware, utils, constants. No service-to-service imports.
 - **Media**: Lambda handlers only (transcoding, image processing); no FastAPI.
 
@@ -18,12 +18,12 @@ flowchart LR
     ALB[ALB]
   end
   subgraph services [Microservices]
-    Identity[identity]
-    Content[content]
-    Course[course]
-    Webinar[webinar]
-    Payment[payment]
-    Platform[platform]
+    Identity[identity :8001]
+    Content[content :8002]
+    Course[course :8003]
+    Webinar[webinar :8004]
+    Payment[payment :8005]
+    Platform[platform :8006]
   end
   subgraph data [Data]
     RDS[(Postgres)]
@@ -44,76 +44,278 @@ flowchart LR
   Platform --> RDS
 ```
 
+---
+
 ## Local Development
 
 ### Prerequisites
 
-- Python 3.11+
-- Docker and Docker Compose
-- Make (optional)
+| Tool | Version | Notes |
+|------|---------|-------|
+| Python | 3.12+ | `python3 --version` |
+| Docker | 20+ | `docker --version` |
+| make | any | `make --version` |
+| jq | any | `sudo apt install jq` |
 
-### Quick Start
+### One-time machine setup
 
-1. Copy env and install shared + service deps:
+```bash
+# 1. Install python venv support (Ubuntu/Debian)
+sudo apt install python3.12-venv jq -y
 
-   ```bash
-   cp .env.example .env
-   make install
-   ```
+# 2. Create virtualenv and install all dev tools + service deps
+make install-dev
+make install
 
-2. Start dependencies (Postgres, Redis):
+# 3. Start local Postgres + Redis (no docker-compose plugin needed)
+make docker-up
+```
 
-   ```bash
-   make docker-up
-   ```
+> **Switching to AWS RDS later?**
+> Get `.env.dev` from your team lead, place it in the repo root, then run `make setup-env`.
+> It fetches the RDS password from Secrets Manager and writes `.env` automatically.
 
-3. Run a service (e.g. identity):
+### Environment file
 
-   ```bash
-   make run-identity
-   ```
+The repo ships with `.env.example`. For local dev a working `.env` is already provided:
 
-   Or run all services via Docker Compose:
+```
+POSTGRES_HOST=localhost  POSTGRES_USER=docfliq  POSTGRES_PASSWORD=changeme
+```
 
-   ```bash
-   docker-compose up --build
-   ```
+All `DATABASE_URL`s point to local Docker Postgres by default. No AWS credentials needed for local dev.
 
-### Env Setup
+### Make targets
 
-Edit `.env` with your values. See `.env.example` for required variables (DB URLs, Redis, JWT secret, AWS, Razorpay, etc.).
+| Target | Description |
+|--------|-------------|
+| `make venv` | Create `.venv` virtualenv |
+| `make install-dev` | Install dev tools (awscli, boto3, alembic, ruff, pytest) |
+| `make install` | Install all service deps + shared package |
+| `make docker-up` | Start local Postgres + Redis containers |
+| `make docker-down` | Stop containers (data kept) |
+| `make docker-clean` | Destroy containers + data volumes (full reset) |
+| `make setup-env` | Fetch RDS password from Secrets Manager → write `.env` (AWS only) |
+| `make run-<service>` | Run a service locally with hot reload |
+| `make migrate` | Run Alembic `upgrade head` for all services |
+| `make test` | Run all service tests |
+| `make lint` | Lint + format with Ruff |
 
-### Make Targets
+---
 
-| Target           | Description                          |
-|------------------|--------------------------------------|
-| `make install`   | Install shared package and deps      |
-| `make test`      | Run tests for all services           |
-| `make lint`      | Lint with Ruff                       |
-| `make run-identity` | Run identity service (and siblings) |
-| `make docker-up` | Start Postgres, Redis (and optional LocalStack) |
-| `make migrate`   | Run Alembic migrations (per service)|
-| `make seed`      | Seed dev data                        |
+## Microservices
+
+### MS-1 · Identity — `services/identity` · port 8001
+
+Auth, user profiles, verification, and social graph.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `auth/` | `/api/v1/auth` | Login (email/OTP/OAuth), JWT issue & refresh |
+| `profile/` | `/api/v1/profile` | User profile CRUD, avatar upload |
+| `verification/` | `/api/v1/verification` | Medical licence verification flow |
+| `social_graph/` | `/api/v1/social` | Follow, block, report |
+
+**Database**: `identity_db`
+
+**Run**
+```bash
+make run-identity
+# → http://localhost:8001/docs
+```
+
+---
+
+### MS-2 · Content — `services/content` · port 8002
+
+CMS, feed, full-text search, and all social interactions on content.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `cms/` | `/api/v1/cms` | Post + Channel create / edit / delete |
+| `feed/` | `/api/v1/feed` | Paginated feed, personalized by follows & specialty |
+| `search/` | `/api/v1/search` | Full-text search on posts (Postgres GIN / tsvector) |
+| `interactions/` | `/api/v1/interactions` | Like, comment, bookmark, share, follow, block, report |
+
+**Database**: `content_db`
+
+**Schema** (9 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `channels` | Institutional / sponsor channels |
+| `posts` | Main content posts (text, video, image, link, webinar card, course card) |
+| `comments` | Threaded comments (depth-2) on posts |
+| `likes` | Polymorphic likes on posts and comments |
+| `bookmarks` | User post bookmarks |
+| `shares` | Share tracking (platform: app / whatsapp / twitter / copy-link) |
+| `follows` | User follow graph |
+| `blocks` | User block list |
+| `reports` | Content and user reports |
+
+**Local DB setup (run once after `make docker-up`)**
+
+```bash
+# Apply migrations — creates all 9 tables in content_db
+cd migrations/content
+../../.venv/bin/alembic upgrade head
+
+# Verify tables exist
+docker exec docfliq-postgres psql -U docfliq -d content_db -c "\dt"
+```
+
+**Run**
+```bash
+make run-content
+# → http://localhost:8002/docs
+```
+
+**Adding a new migration after changing models**
+```bash
+cd migrations/content
+../../.venv/bin/alembic revision --autogenerate -m "describe_your_change"
+../../.venv/bin/alembic upgrade head
+```
+
+---
+
+### MS-3 · Course — `services/course` · port 8003
+
+LMS, assessments, and certificates.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `lms/` | `/api/v1/lms` | Course catalogue, enrolment, progress tracking |
+| `assessment/` | `/api/v1/assessment` | Quizzes and grading |
+| `certificates/` | `/api/v1/certificates` | Certificate generation and verification |
+
+**Database**: `course_db`
+
+**Run**
+```bash
+make run-course
+# → http://localhost:8003/docs
+```
+
+---
+
+### MS-4 · Webinar — `services/webinar` · port 8004
+
+Live streaming (AWS IVS / Chime), Q&A, polls.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `live_streaming/` | `/api/v1/webinar` | Webinar schedule, stream lifecycle |
+| `engagement/` | `/api/v1/engagement` | Q&A, polls, reactions |
+
+**Run**
+```bash
+make run-webinar
+# → http://localhost:8004/docs
+```
+
+---
+
+### MS-5 · Media — `services/media`
+
+Lambda-only service — no FastAPI, no port.
+Handles S3-triggered transcoding (video) and image processing (thumbnails, avatars).
+Deploy via SAM / Terraform Lambda module.
+
+---
+
+### MS-6 · Payment — `services/payment` · port 8005
+
+Razorpay integration, order management, entitlements.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `razorpay/` | `/api/v1/payment` | Order create, webhook verification |
+| `entitlements/` | `/api/v1/entitlements` | Course / webinar access control |
+
+**Database**: `payment_db`
+
+**Run**
+```bash
+make run-payment
+# → http://localhost:8005/docs
+```
+
+---
+
+### MS-7 · Platform — `services/platform` · port 8006
+
+Admin panel, notifications, analytics, audit log.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `admin/` | `/api/v1/admin` | User management, content moderation |
+| `notifications/` | `/api/v1/notifications` | Push, email, SMS dispatch |
+| `analytics/` | `/api/v1/analytics` | Dashboards, event aggregation |
+| `audit/` | `/api/v1/audit` | Immutable audit trail |
+
+**Database**: `platform_db`
+
+**Run**
+```bash
+make run-platform
+# → http://localhost:8006/docs
+```
+
+---
 
 ## Repository Layout
 
-- `services/identity` — MS-1: Auth, Profile, Verification, Social Graph
-- `services/content` — MS-2: CMS, Feed, Search, Interactions
-- `services/course` — MS-3: LMS, Assessment, Certificates
-- `services/webinar` — MS-4: Live Streaming, Chime/IVS, Engagement
-- `services/media` — MS-5: Lambda handlers (transcoding, image processing)
-- `services/payment` — MS-6: Razorpay, Entitlements
-- `services/platform` — MS-7: Admin, Notifications, Analytics, Audit
-- `shared/` — JWT auth, events, models, database, middleware, utils, constants
-- `infra/` — Terraform (VPC, RDS, Redis, ECS, Lambda, etc.)
-- `migrations/` — Alembic per service (identity, content, course, payment, platform)
-- `scripts/` — deploy, seed-data, health-check
-- `.github/workflows/` — CI, deploy-dev, deploy-uat, deploy-prod
+```
+docfliq-backend/
+├── services/
+│   ├── identity/       # MS-1 Auth + Profile
+│   ├── content/        # MS-2 CMS + Feed + Search + Interactions
+│   ├── course/         # MS-3 LMS + Assessments
+│   ├── webinar/        # MS-4 Live Streaming
+│   ├── media/          # MS-5 Lambda handlers
+│   ├── payment/        # MS-6 Razorpay + Entitlements
+│   └── platform/       # MS-7 Admin + Notifications
+├── shared/             # JWT, events, models, DB/Redis factories, middleware
+├── migrations/
+│   ├── identity/       # Alembic for identity_db
+│   ├── content/        # Alembic for content_db
+│   ├── course/         # Alembic for course_db
+│   ├── payment/        # Alembic for payment_db
+│   └── platform/       # Alembic for platform_db
+├── infra/              # Terraform (VPC, RDS, ECS, Lambda, CloudFront)
+├── scripts/            # setup-dev-env, deploy, seed-data, health-check
+├── .env.example        # Template — copy to .env for local dev
+├── .env.dev.example    # Template — copy to .env.dev for RDS/AWS access
+└── Makefile
+```
+
+---
 
 ## API Versioning
 
 All services expose routes under `/api/v1/`. Health checks at `/health`.
 
+```bash
+curl http://localhost:8002/health
+# {"status": "ok", "service": "content"}
+```
+
+---
+
 ## Infrastructure
 
-See `infra/` for Terraform modules and environments (dev, uat, prod). Deploy via scripts or GitHub Actions.
+See `infra/` for Terraform modules and environment configs (`dev`, `uat`, `prod`).
+Deploy via `scripts/deploy.sh` or GitHub Actions (`.github/workflows/`).

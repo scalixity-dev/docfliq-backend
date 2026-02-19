@@ -8,11 +8,25 @@ BIN = $(VENV)/bin
 # Shared package (install in editable mode for local dev)
 SHARED = shared
 
-.PHONY: install install-shared test lint docker-up migrate seed \
+.PHONY: venv install install-shared install-dev setup-env test lint \
+	docker-up docker-down docker-clean migrate seed \
 	run-identity run-content run-course run-webinar run-payment run-platform \
 	clean
 
-install-shared:
+## Create the virtual environment
+venv:
+	$(PYTHON) -m venv $(VENV)
+	$(BIN)/pip install --upgrade pip setuptools wheel
+
+## Install dev tools (awscli, boto3, alembic, pytest, ruff, etc.)
+install-dev: venv
+	$(BIN)/pip install -r requirements-dev.txt
+
+## Fetch RDS password from Secrets Manager and write .env (run once per machine)
+setup-env:
+	@bash scripts/setup-dev-env.sh
+
+install-shared: venv
 	$(BIN)/pip install -e ./$(SHARED) 2>/dev/null || $(PYTHON) -m pip install -e ./$(SHARED)
 
 install: install-shared
@@ -33,8 +47,32 @@ lint:
 	$(BIN)/ruff check shared services --fix 2>/dev/null || $(PYTHON) -m ruff check shared services --fix
 	$(BIN)/ruff format shared services 2>/dev/null || $(PYTHON) -m ruff format shared services
 
+## Start local postgres + redis (plain docker run — no compose plugin needed)
 docker-up:
-	docker-compose up -d postgres redis
+	@docker network create docfliq-net 2>/dev/null || true
+	@docker run -d --name docfliq-postgres --network docfliq-net \
+		-e POSTGRES_USER=docfliq -e POSTGRES_PASSWORD=changeme \
+		-p 5432:5432 \
+		-v docfliq_postgres_data:/var/lib/postgresql/data \
+		-v $(PWD)/scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro \
+		postgres:16-alpine 2>/dev/null || docker start docfliq-postgres
+	@docker run -d --name docfliq-redis --network docfliq-net \
+		-p 6379:6379 \
+		redis:7-alpine 2>/dev/null || docker start docfliq-redis
+	@echo "Waiting for postgres..." && until docker exec docfliq-postgres pg_isready -U docfliq -q; do sleep 1; done
+	@echo "postgres + redis ready"
+
+## Stop containers (data kept in volumes)
+docker-down:
+	@docker stop docfliq-postgres docfliq-redis 2>/dev/null || true
+	@echo "Containers stopped"
+
+## Destroy containers + data volumes (full reset)
+docker-clean:
+	@docker rm -f docfliq-postgres docfliq-redis 2>/dev/null || true
+	@docker volume rm docfliq_postgres_data 2>/dev/null || true
+	@docker network rm docfliq-net 2>/dev/null || true
+	@echo "Dev containers and data removed"
 
 migrate:
 	cd migrations/identity && $(BIN)/alembic upgrade head 2>/dev/null || true
