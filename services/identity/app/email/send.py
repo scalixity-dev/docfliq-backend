@@ -179,6 +179,48 @@ async def send_email_verification(
     )
 
 
+async def send_email_otp(
+    to_email: str,
+    full_name: str,
+    otp_code: str,
+    settings: Settings,
+    verification_url: str = "",
+) -> None:
+    """
+    Send a 6-digit verification code to the user's email.
+
+    Optionally includes a clickable verification link as a fallback.
+    Used after registration and when the user requests email verification.
+    """
+    link_section = (
+        f"<hr style='margin:24px 0'/>"
+        f"<h3 style='margin:0 0 8px'>Or click the link below</h3>"
+        f"<p style='text-align:center;margin:24px 0'>"
+        f"<a href='{verification_url}' "
+        f"style='background:#2563eb;color:#fff;padding:14px 28px;border-radius:6px;"
+        f"text-decoration:none;font-weight:bold'>Verify Email Address</a></p>"
+        f"<p>Or copy and paste this link into your browser:</p>"
+        f"<p style='word-break:break-all;color:#6b7280'>{verification_url}</p>"
+        f"<p>The link expires in <strong>24 hours</strong>.</p>"
+        if verification_url else ""
+    )
+    await _deliver(
+        to_email, full_name,
+        "Your DOCFLIQ verification code",
+        f"<p>Hi {full_name},</p>"
+        f"<p>Your verification code is:</p>"
+        f"<p style='text-align:center;margin:24px 0'>"
+        f"<span style='font-size:32px;font-weight:bold;letter-spacing:8px;"
+        f"background:#f1f5f9;padding:16px 32px;border-radius:8px;display:inline-block'>"
+        f"{otp_code}</span></p>"
+        f"<p>This code expires in <strong>5 minutes</strong>.</p>"
+        f"{link_section}"
+        f"<p style='color:#6b7280;font-size:13px;margin-top:32px'>"
+        f"If you did not create a DOCFLIQ account, you can safely ignore this email.</p>",
+        settings,
+    )
+
+
 async def send_account_locked(
     to_email: str, full_name: str, settings: Settings
 ) -> None:

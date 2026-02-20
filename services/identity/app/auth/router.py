@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.rate_limit import limiter
 from app.auth.controller import (
+    email_otp_request as email_otp_request_controller,
+    email_otp_verify as email_otp_verify_controller,
     login as login_controller,
     logout as logout_controller,
     otp_request as otp_request_controller,
@@ -31,6 +33,8 @@ from app.auth.controller import (
     verify_email as verify_email_controller,
 )
 from app.auth.schemas import (
+    EmailOTPRequestSchema,
+    EmailOTPVerifyRequest,
     LoginRequest,
     LogoutRequest,
     MessageResponse,
@@ -295,3 +299,48 @@ async def resend_verification(
         session, redis, settings, current_user.id, background_tasks
     )
     return MessageResponse(message="Verification email sent. Please check your inbox.")
+
+
+# ── Email OTP (6-digit code verification via email) ─────────────────────────
+
+@router.post(
+    "/email-otp/request",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Request a 6-digit OTP sent via email",
+    description=(
+        "Sends a 6-digit verification code to the given email address. "
+        "Always returns 200 even if the email is not registered (prevents enumeration). "
+        "Code expires in 5 minutes."
+    ),
+)
+@limiter.limit("5/10minutes")
+async def email_otp_request(
+    request: Request,
+    body: EmailOTPRequestSchema,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
+    redis: aioredis.Redis = Depends(_get_redis),
+) -> MessageResponse:
+    await email_otp_request_controller(session, body, redis, settings, background_tasks)
+    return MessageResponse(message="If an account exists for this email, a verification code has been sent.")
+
+
+@router.post(
+    "/email-otp/verify",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Verify 6-digit email OTP and mark email as verified",
+    description=(
+        "Validates the 6-digit code sent to the user's email. "
+        "On success, marks the email as verified."
+    ),
+)
+async def email_otp_verify(
+    body: EmailOTPVerifyRequest,
+    session: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(_get_redis),
+) -> MessageResponse:
+    await email_otp_verify_controller(session, redis, body)
+    return MessageResponse(message="Email verified successfully.")

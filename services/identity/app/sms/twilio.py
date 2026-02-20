@@ -64,7 +64,7 @@ async def check_otp(phone: str, code: str, settings: Settings) -> bool:
     if not is_configured(settings):
         return False
 
-    url = f"{_VERIFY_BASE}/{settings.twilio_verify_service_sid}/VerificationChecks"
+    url = f"{_VERIFY_BASE}/{settings.twilio_verify_service_sid}/VerificationCheck"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
@@ -72,10 +72,19 @@ async def check_otp(phone: str, code: str, settings: Settings) -> bool:
                 data={"To": phone, "Code": code},
                 auth=(settings.twilio_account_sid, settings.twilio_auth_token),
             )
+        body = r.json()
+        logger.warning(
+            "Twilio check_otp: status_code=%s twilio_status=%s phone=%s",
+            r.status_code,
+            body.get("status", "N/A"),
+            phone,
+        )
         if r.status_code >= 400:
-            logger.error("Twilio check_otp error %s: %s", r.status_code, r.text[:300])
+            logger.error(
+                "Twilio check_otp error %s: %s", r.status_code, r.text[:500]
+            )
             return False
-        return r.json().get("status") == "approved"
+        return body.get("status") == "approved"
     except Exception as exc:
         logger.error("Twilio check_otp failed: %s", exc)
         return False

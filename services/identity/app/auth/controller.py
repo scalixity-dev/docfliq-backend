@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import OTP_EXPIRE_SECONDS, OTPPurpose, UserRole
 from app.auth.schemas import (
+    EmailOTPRequestSchema,
+    EmailOTPVerifyRequest,
     LoginRequest,
     LogoutRequest,
     OTPRequestSchema,
@@ -40,6 +42,7 @@ from app.auth.service import (
     check_login_lock,
     clear_failed_logins,
     create_access_token,
+    create_email_otp_in_redis,
     create_email_verification_token,
     create_otp,
     create_otp_in_redis,
@@ -57,6 +60,7 @@ from app.auth.service import (
     register_user,
     reset_password,
     rotate_session,
+    verify_email_otp_from_redis,
     verify_email_token,
     verify_otp,
     verify_otp_from_redis,
@@ -145,11 +149,13 @@ async def register(
         expire_seconds=settings.jwt_refresh_expire_seconds,
     )
 
-    # Send email verification link in the background (non-blocking)
+    # Send email OTP + verification link in the background (non-blocking)
+    plain_otp = f"{random.SystemRandom().randint(100_000, 999_999)}"
+    await create_email_otp_in_redis(redis, user.email, plain_otp)
     token = await create_email_verification_token(redis, user.id)
     verify_url = f"{settings.app_base_url}/auth/email/verify?token={token}"
     background_tasks.add_task(
-        email.send_email_verification, user.email, user.full_name, verify_url, settings
+        email.send_email_otp, user.email, user.full_name, plain_otp, settings, verify_url
     )
 
     return RegisterResponse(
@@ -198,6 +204,16 @@ async def login(
     # Successful auth — reset failure counter
     await clear_failed_logins(redis, body.email)
     await record_login(session, user)
+
+    # If email not verified, send OTP for verification (frontend shows OTP screen)
+    if not user.email_verified:
+        plain_otp = f"{random.SystemRandom().randint(100_000, 999_999)}"
+        await create_email_otp_in_redis(redis, user.email, plain_otp)
+        token = await create_email_verification_token(redis, user.id)
+        verify_url = f"{settings.app_base_url}/auth/email/verify?token={token}"
+        background_tasks.add_task(
+            email.send_email_otp, user.email, user.full_name, plain_otp, settings, verify_url
+        )
 
     access_token, refresh_token = _build_token_pair(
         user.id, user.email, user.roles, settings
@@ -468,3 +484,49 @@ async def otp_verify(
         refresh_token=refresh_token,
         expires_in=settings.jwt_expire_seconds,
     )
+
+
+# ── Email OTP: request ──────────────────────────────────────────────────────
+
+async def email_otp_request(
+    session: AsyncSession,
+    body: EmailOTPRequestSchema,
+    redis: aioredis.Redis,
+    settings: Settings,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """
+    Generate a 6-digit OTP, store in Redis, and send to the user's email.
+
+    Always returns 200 even for unknown emails (prevents enumeration).
+    """
+    plain_otp = f"{random.SystemRandom().randint(100_000, 999_999)}"
+    user = await get_user_by_email(session, body.email)
+    if user is not None:
+        await create_email_otp_in_redis(redis, body.email, plain_otp)
+        # Also create a verification link as fallback
+        token = await create_email_verification_token(redis, user.id)
+        verify_url = f"{settings.app_base_url}/auth/email/verify?token={token}"
+        background_tasks.add_task(
+            email.send_email_otp, user.email, user.full_name, plain_otp, settings, verify_url
+        )
+
+
+# ── Email OTP: verify ───────────────────────────────────────────────────────
+
+async def email_otp_verify(
+    session: AsyncSession,
+    redis: aioredis.Redis,
+    body: EmailOTPVerifyRequest,
+) -> None:
+    """
+    Verify the 6-digit email OTP and mark the user's email as verified.
+
+    Raises OTPExpired / OTPExhausted / InvalidOTP on failure.
+    """
+    await verify_email_otp_from_redis(redis, body.email, body.otp_code)
+    # Mark email as verified
+    user = await get_user_by_email(session, body.email)
+    if user is not None:
+        user.email_verified = True
+        await session.flush()

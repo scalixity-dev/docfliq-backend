@@ -60,7 +60,12 @@ class User(Base):
     )
     # Professional role — drives content access and profile field requirements
     role: Mapped[UserRole] = mapped_column(
-        sa.Enum(UserRole, name="userrole", create_type=False),
+        sa.Enum(
+            UserRole,
+            name="userrole",
+            create_type=False,
+            values_callable=lambda e: [x.value for x in e],
+        ),
         nullable=False,
         index=True,
     )
@@ -89,7 +94,12 @@ class User(Base):
 
     # ── Verification state machine ────────────────────────────────────────────
     verification_status: Mapped[VerificationStatus] = mapped_column(
-        sa.Enum(VerificationStatus, name="verificationstatus", create_type=False),
+        sa.Enum(
+            VerificationStatus,
+            name="verificationstatus",
+            create_type=False,
+            values_callable=lambda e: [x.value for x in e],
+        ),
         nullable=False,
         default=VerificationStatus.UNVERIFIED,
         server_default=sa.text("'unverified'"),
@@ -266,7 +276,12 @@ class OTPRequest(Base):
     # Hashed OTP code — never store plaintext
     otp_code: Mapped[str] = mapped_column(sa.String(255), nullable=False)
     purpose: Mapped[OTPPurpose] = mapped_column(
-        sa.Enum(OTPPurpose, name="otppurpose", create_type=False),
+        sa.Enum(
+            OTPPurpose,
+            name="otppurpose",
+            create_type=False,
+            values_callable=lambda e: [x.value for x in e],
+        ),
         nullable=False,
     )
     is_used: Mapped[bool] = mapped_column(

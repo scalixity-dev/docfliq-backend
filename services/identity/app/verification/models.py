@@ -53,13 +53,23 @@ class UserVerification(Base):
         index=True,
     )
     document_type: Mapped[DocumentType] = mapped_column(
-        sa.Enum(DocumentType, name="documenttype", create_type=False),
+        sa.Enum(
+            DocumentType,
+            name="documenttype",
+            create_type=False,
+            values_callable=lambda e: [x.value for x in e],
+        ),
         nullable=False,
     )
     # S3 object URL (presigned PUT → confirmed via /verify/confirm endpoint)
     document_url: Mapped[str] = mapped_column(sa.String(500), nullable=False)
     status: Mapped[VerificationDocStatus] = mapped_column(
-        sa.Enum(VerificationDocStatus, name="verificationdocstatus", create_type=False),
+        sa.Enum(
+            VerificationDocStatus,
+            name="verificationdocstatus",
+            create_type=False,
+            values_callable=lambda e: [x.value for x in e],
+        ),
         nullable=False,
         default=VerificationDocStatus.PENDING,
         server_default=sa.text("'pending'"),

@@ -778,3 +778,67 @@ async def record_failed_login(
 async def clear_failed_logins(redis: aioredis.Redis, email: str) -> None:
     """Reset the failure counter on successful login."""
     await redis.delete(f"{_LOGIN_FAIL_PREFIX}{email.lower()}")
+
+
+# ── Email OTP (Redis-backed, for email verification) ────────────────────────
+
+_EMAIL_OTP_PREFIX = "email_otp:"
+_EMAIL_OTP_TRIES_PREFIX = "email_otp_tries:"
+_EMAIL_OTP_MAX_ATTEMPTS = 5
+
+
+async def create_email_otp_in_redis(
+    redis: aioredis.Redis,
+    email: str,
+    plain_otp: str,
+    expire_seconds: int = OTP_EXPIRE_SECONDS,
+) -> None:
+    """
+    Store a 6-digit email OTP in Redis (keyed by lowercased email).
+
+    A new call for the same email overwrites any previous OTP.
+    The caller must send plain_otp to the user via email.
+    """
+    key = email.lower()
+    pipe = redis.pipeline()
+    pipe.setex(f"{_EMAIL_OTP_PREFIX}{key}", expire_seconds, plain_otp)
+    pipe.setex(f"{_EMAIL_OTP_TRIES_PREFIX}{key}", expire_seconds, "0")
+    await pipe.execute()
+
+
+async def verify_email_otp_from_redis(
+    redis: aioredis.Redis,
+    email: str,
+    plain_otp: str,
+) -> None:
+    """
+    Validate the email OTP stored in Redis.
+
+    Raises:
+      OTPExpired   — key not found (TTL elapsed or never created)
+      OTPExhausted — attempt counter reached max
+      InvalidOTP   — code is wrong; attempt counter incremented
+    On success the OTP and attempt keys are deleted (single-use).
+    """
+    key = email.lower()
+    stored = await redis.get(f"{_EMAIL_OTP_PREFIX}{key}")
+    if stored is None:
+        raise OTPExpired()
+
+    tries_raw = await redis.get(f"{_EMAIL_OTP_TRIES_PREFIX}{key}")
+    tries = int(tries_raw or 0)
+    if tries >= _EMAIL_OTP_MAX_ATTEMPTS:
+        raise OTPExhausted()
+
+    if not secrets.compare_digest(stored, plain_otp):
+        await redis.incr(f"{_EMAIL_OTP_TRIES_PREFIX}{key}")
+        remaining = _EMAIL_OTP_MAX_ATTEMPTS - tries - 1
+        if remaining <= 0:
+            raise OTPExhausted()
+        raise InvalidOTP(attempts_remaining=remaining)
+
+    # Correct code — single-use: delete both keys
+    await redis.delete(
+        f"{_EMAIL_OTP_PREFIX}{key}",
+        f"{_EMAIL_OTP_TRIES_PREFIX}{key}",
+    )

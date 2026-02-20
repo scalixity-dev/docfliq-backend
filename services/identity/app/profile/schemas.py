@@ -33,6 +33,7 @@ class UpdateProfileRequest(_Base):
     """PATCH /users/me — all fields optional; only provided fields are written."""
 
     full_name: str | None = Field(None, min_length=1, max_length=150)
+    role: UserRole | None = None
     specialty: str | None = Field(None, max_length=100)
     sub_specialty: str | None = Field(None, max_length=100)
     years_of_experience: int | None = Field(None, ge=0, le=80)
