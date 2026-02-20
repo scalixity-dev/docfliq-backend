@@ -18,12 +18,37 @@ sys.path.insert(0, str(repo_root / "services" / "content"))
 from shared.database.postgres import Base  # noqa: E402
 import app.models  # noqa: E402, F401 — registers all ORM models with Base.metadata
 
+# Tables that belong to the content service — filter out models from other services
+# that share the same Base.
+CONTENT_TABLES = frozenset({
+    "posts",
+    "post_versions",
+    "comments",
+    "likes",
+    "bookmarks",
+    "shares",
+    "reports",
+    "channels",
+    "editor_picks",
+    "cohorts",
+    "ab_experiments",
+    "experiment_events",
+})
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table":
+        return name in CONTENT_TABLES
+    return True
+
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 url = os.environ.get("CONTENT_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
-config.set_main_option("sqlalchemy.url", url)
+# Escape % for ConfigParser interpolation (URL-encoded passwords contain %)
+config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
@@ -34,13 +59,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

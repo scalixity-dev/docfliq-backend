@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 
 revision: str = "d5e6f7a8b9c0"
@@ -24,18 +25,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1. Enum types
-    experiment_status = sa.Enum(
-        "DRAFT", "RUNNING", "PAUSED", "COMPLETED",
-        name="experiment_status",
+    # 1. Enum types — create via raw SQL, then reference with create_type=False
+    #    to prevent SQLAlchemy's _on_table_create from issuing a duplicate CREATE TYPE.
+    op.execute("CREATE TYPE experiment_status AS ENUM ('DRAFT', 'RUNNING', 'PAUSED', 'COMPLETED')")
+    op.execute(
+        "CREATE TYPE experiment_event_type AS ENUM "
+        "('IMPRESSION', 'CLICK', 'LIKE', 'COMMENT', 'SHARE', 'SESSION_START', 'SESSION_END')"
     )
-    experiment_event_type = sa.Enum(
+    experiment_status = PgEnum(
+        "DRAFT", "RUNNING", "PAUSED", "COMPLETED",
+        name="experiment_status", create_type=False,
+    )
+    experiment_event_type = PgEnum(
         "IMPRESSION", "CLICK", "LIKE", "COMMENT", "SHARE",
         "SESSION_START", "SESSION_END",
-        name="experiment_event_type",
+        name="experiment_event_type", create_type=False,
     )
-    experiment_status.create(op.get_bind(), checkfirst=True)
-    experiment_event_type.create(op.get_bind(), checkfirst=True)
 
     # 2. cohorts
     op.create_table(
