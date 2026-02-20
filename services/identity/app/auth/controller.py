@@ -64,7 +64,7 @@ from app.auth.service import (
     verify_password_reset_otp,
 )
 from app.config import Settings
-from app.email import brevo
+from app.email import send as email
 from app.exceptions import (
     InvalidCredentials,
     InvalidOTP,
@@ -147,7 +147,7 @@ async def register(
     token = await create_email_verification_token(redis, user.id)
     verify_url = f"{settings.app_base_url}/auth/email/verify?token={token}"
     background_tasks.add_task(
-        brevo.send_email_verification, user.email, user.full_name, verify_url, settings
+        email.send_email_verification, user.email, user.full_name, verify_url, settings
     )
 
     return RegisterResponse(
@@ -186,7 +186,7 @@ async def login(
             target_user = await get_user_by_email(session, body.email)
             if target_user is not None:
                 background_tasks.add_task(
-                    brevo.send_account_locked,
+                    email.send_account_locked,
                     target_user.email,
                     target_user.full_name,
                     settings,
@@ -329,7 +329,7 @@ async def password_reset_request(
         link_token = await create_password_reset_link_token(redis, body.email)
         reset_link = f"{settings.app_base_url}/auth/reset-password?token={link_token}"
         background_tasks.add_task(
-            brevo.send_password_reset_otp,
+            email.send_password_reset_otp,
             body.email,
             user.full_name,
             plain_otp,
@@ -390,7 +390,7 @@ async def resend_verification(
     token = await create_email_verification_token(redis, user.id)
     verify_url = f"{settings.app_base_url}/auth/email/verify?token={token}"
     background_tasks.add_task(
-        brevo.send_email_verification, user.email, user.full_name, verify_url, settings
+        email.send_email_verification, user.email, user.full_name, verify_url, settings
     )
 
 

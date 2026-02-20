@@ -28,7 +28,16 @@ class Settings(BaseSettings):
     # Comma-separated in .env (e.g. CORS_ORIGINS=http://localhost:3000,http://localhost:8080)
     cors_origins: str = "http://localhost:3000"
 
-    # ── Brevo (transactional email) ────────────────────────────────────────────
+    # ── SMTP (primary email provider — CiNet / Postal) ─────────────────────────
+    smtp_host: str = ""
+    smtp_port: int = 25
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "DOCFLIQ"
+    smtp_start_tls: bool = True  # upgrade to TLS via STARTTLS (port 25/587)
+
+    # ── Brevo (fallback email provider) ──────────────────────────────────────────
     brevo_api_key: str = ""
     brevo_from_email: str = "noreply@docfliq.com"
     brevo_from_name: str = "DOCFLIQ"

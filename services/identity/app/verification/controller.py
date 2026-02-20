@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.email import brevo
+from app.email import send as email
 from app.profile.service import get_profile
 from app.s3 import (
     check_document_size,
@@ -69,12 +69,12 @@ async def confirm_upload(
 
     # Email the user confirming their submission.
     background_tasks.add_task(
-        brevo.send_verification_submitted, user.email, user.full_name, settings
+        email.send_verification_submitted, user.email, user.full_name, settings
     )
     # Email the admin team so they know a new document is waiting in the queue.
     if settings.admin_notification_email:
         background_tasks.add_task(
-            brevo.send_verification_submitted_admin,
+            email.send_verification_submitted_admin,
             settings.admin_notification_email,
             user.full_name,
             user.email,
@@ -131,13 +131,13 @@ async def review_doc(
     if body.action == "APPROVE":
         doc = await svc.approve(session, doc_id, reviewer_id, body.notes)
         background_tasks.add_task(
-            brevo.send_verification_approved, doc.user.email, doc.user.full_name, settings
+            email.send_verification_approved, doc.user.email, doc.user.full_name, settings
         )
     else:
         reason = body.notes or "Your document could not be verified."
         doc = await svc.reject(session, doc_id, reviewer_id, reason)
         background_tasks.add_task(
-            brevo.send_verification_rejected,
+            email.send_verification_rejected,
             doc.user.email,
             doc.user.full_name,
             reason,
@@ -155,7 +155,7 @@ async def suspend_user(
 ) -> UserStatusResponse:
     user = await svc.suspend_user(session, user_id, body.reason)
     background_tasks.add_task(
-        brevo.send_account_suspended, user.email, user.full_name, body.reason, settings
+        email.send_account_suspended, user.email, user.full_name, body.reason, settings
     )
     return UserStatusResponse(id=user.id, verification_status=user.verification_status)
 
