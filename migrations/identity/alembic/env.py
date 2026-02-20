@@ -35,7 +35,8 @@ if config.config_file_name is not None:
 url = os.environ.get("IDENTITY_DATABASE_URL") or config.get_main_option(
     "sqlalchemy.url"
 )
-config.set_main_option("sqlalchemy.url", url)
+# Escape '%' as '%%' for configparser interpolation (URL-encoded passwords)
+config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
