@@ -172,14 +172,7 @@ CMS, feed, full-text search, and all social interactions on content.
 .venv/bin/pip install -r services/content/requirements.txt
 ```
 
-**Step 2 — Start Postgres + Redis**
-
-```bash
-make docker-up
-# Starts docfliq-postgres (:5432) and docfliq-redis (:6379)
-```
-
-**Step 3 — Create the database and apply migrations** (once, or after model changes)
+**Step 2 — Create the database and apply migrations** (once, or after model changes)
 
 ```bash
 # Create content_db (skip if it already exists)
@@ -192,14 +185,14 @@ cd migrations/content && ../../.venv/bin/alembic upgrade head && cd ../..
 docker exec docfliq-postgres psql -U docfliq -d content_db -c "\dt"
 ```
 
-**Step 4 — Run the service**
+**Step 3 — Run the service**
 
 ```bash
 make run-content
 # Starts uvicorn on http://0.0.0.0:8002 with hot-reload
 ```
 
-**Step 5 — Open API docs**
+**Step 4 — Open API docs**
 
 | URL | Description |
 |-----|-------------|
@@ -272,23 +265,175 @@ cd ../..
 
 ### MS-3 · Course — `services/course` · port 8003
 
-LMS, assessments, and certificates.
+Complete LMS: course catalogue, enrollment, learning player with signed video URLs,
+MCQ/MSQ assessments with timed quizzes, weighted progress tracking (video watch %,
+document pages %, quiz pass), SCORM 1.2/2004 support, and PDF certificate generation
+with QR verification.
 
 **Domains**
 
 | Domain | Prefix | Responsibility |
 |--------|--------|----------------|
-| `lms/` | `/api/v1/lms` | Course catalogue, enrolment, progress tracking |
-| `assessment/` | `/api/v1/assessment` | Quizzes and grading |
-| `certificates/` | `/api/v1/certificates` | Certificate generation and verification |
+| `lms/` | `/api/v1/lms` | Course / module / lesson CRUD, enrollment (free + paid), progress tracking |
+| `assessment/` | `/api/v1/assessment` | Quiz management (MCQ / MSQ), timed attempts, grading, answer review |
+| `player/` | `/api/v1/player` | Video / document playback, CloudFront signed URLs, heartbeat, SCORM, weighted progress |
+| `certificates/` | `/api/v1/certificates` | PDF certificate generation (ReportLab), S3 upload, public QR verification |
 
 **Database**: `course_db`
 
-**Run**
+**Schema** (12 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `courses` | Course catalogue with syllabus, pricing, completion_logic JSONB |
+| `course_modules` | Ordered sections within a course |
+| `lessons` | Individual lessons (VIDEO, PDF, TEXT, QUIZ, SCORM) with player metadata |
+| `enrollments` | User enrollment with weighted progress_pct and status |
+| `lesson_progress` | Per-lesson tracking: watched_intervals, pages_viewed, quiz_score |
+| `quizzes` | MCQ/MSQ questions JSONB, time limits, randomize, show_answers policy |
+| `quiz_attempts` | Per-attempt record with answers, score, pass/fail |
+| `scorm_sessions` | SCORM 1.2/2004 runtime data (tracking_data JSONB) |
+| `certificates` | PDF certificates with tamper-proof QR verification codes |
+
+---
+
+#### Running the course service locally
+
+**Step 1 — Install dependencies** (once)
+
+```bash
+# From repo root
+.venv/bin/pip install -r services/course/requirements.txt
+```
+
+**Step 2 — Create the database and apply migrations** (once, or after model changes)
+
+```bash
+# Create course_db (skip if it already exists)
+docker exec docfliq-postgres psql -U docfliq -c "CREATE DATABASE course_db;" 2>/dev/null || true
+
+# Apply all migrations
+cd migrations/course && ../../.venv/bin/alembic upgrade head && cd ../..
+
+# Verify tables
+docker exec docfliq-postgres psql -U docfliq -d course_db -c "\dt"
+```
+
+**Step 3 — Run the service**
+
 ```bash
 make run-course
-# → http://localhost:8003/docs
+# Starts uvicorn on http://0.0.0.0:8003 with hot-reload
 ```
+
+**Step 4 — Open API docs**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8003/docs` | Swagger UI — interactive, try endpoints live |
+| `http://localhost:8003/redoc` | ReDoc — read-optimised reference |
+| `http://localhost:8003/health` | Liveness probe → `{"status":"ok","service":"course"}` |
+
+---
+
+#### Testing the API
+
+**Generate a dev JWT token**
+
+```bash
+TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode(
+  {'sub':'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp':datetime.datetime.utcnow()+datetime.timedelta(hours=24)},
+  'change-me',algorithm='HS256'))")
+```
+
+> Note: the course service default JWT secret is `change-me` (see `app/config.py`).
+
+Copy the token. In Swagger UI click **Authorize** (top-right lock icon) and enter `Bearer <token>`.
+
+**Quick test sequence via Swagger**
+
+1. `GET /health` — confirm service is alive
+2. `POST /api/v1/lms/courses` — create a DRAFT course (instructor)
+3. `POST /api/v1/lms/courses/{id}/modules` — add a module
+4. `POST /api/v1/lms/modules/{id}/lessons` — add a VIDEO lesson
+5. `PATCH /api/v1/lms/courses/{id}/status` — publish the course (`{"status": "PUBLISHED"}`)
+6. `POST /api/v1/lms/courses/{id}/enroll` — enroll as a student
+7. `POST /api/v1/assessment/lessons/{lesson_id}/quiz` — create a quiz for a lesson
+8. `POST /api/v1/assessment/quizzes/{id}/start` — start the quiz (timer begins)
+9. `POST /api/v1/assessment/quizzes/{id}/attempt` — submit answers
+10. `GET /api/v1/player/courses/{id}/progress/detail` — view weighted progress breakdown
+11. `POST /api/v1/certificates/enrollments/{id}/generate` — generate PDF certificate (after completion)
+12. `GET /api/v1/certificates/verify/{code}` — public QR verification (no auth)
+
+**curl examples**
+
+```bash
+# Create a course
+curl -s -X POST http://localhost:8003/api/v1/lms/courses \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Cardiology Basics",
+    "description": "Introduction to cardiology for medical professionals.",
+    "category": "Cardiology",
+    "pricing_type": "FREE",
+    "instructor_name": "Dr. Smith"
+  }' | python3 -m json.tool
+
+# Enroll in a course
+curl -s -X POST http://localhost:8003/api/v1/lms/courses/{course_id}/enroll \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+# Submit a quiz attempt (MCQ answer=index, MSQ answer=[indices])
+curl -s -X POST http://localhost:8003/api/v1/assessment/quizzes/{quiz_id}/attempt \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"answers": [1, [0,2], 0], "time_taken_secs": 120}' | python3 -m json.tool
+
+# Video heartbeat (anti-cheat intervals)
+curl -s -X POST http://localhost:8003/api/v1/player/lessons/{lesson_id}/heartbeat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"position_secs": 180, "watched_intervals": [[0,120],[150,180]]}' | python3 -m json.tool
+
+# Generate certificate (after course completion)
+curl -s -X POST http://localhost:8003/api/v1/certificates/enrollments/{enrollment_id}/generate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"recipient_name": "Dr. Jane Smith"}' | python3 -m json.tool
+
+# Verify certificate (public, no auth)
+curl -s http://localhost:8003/api/v1/certificates/verify/{verification_code} | python3 -m json.tool
+```
+
+---
+
+**Adding a new migration after changing models**
+
+```bash
+cd migrations/course
+../../.venv/bin/alembic revision --autogenerate -m "describe_your_change"
+../../.venv/bin/alembic upgrade head
+cd ../..
+```
+
+---
+
+#### Environment variables (optional overrides)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COURSE_DATABASE_URL` | `postgresql+asyncpg://...localhost.../course_db` | Postgres connection |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis for heartbeat, resume, quiz timers |
+| `JWT_SECRET` | `change-me` | JWT signing secret |
+| `CLOUDFRONT_DOMAIN` | *(empty)* | CloudFront domain for signed video URLs |
+| `CLOUDFRONT_KEY_PAIR_ID` | *(empty)* | CloudFront key pair ID |
+| `CLOUDFRONT_PRIVATE_KEY_PATH` | *(empty)* | Path to CloudFront RSA private key |
+| `S3_BUCKET` | `docfliq-media` | S3 bucket for certificate PDFs |
+| `S3_REGION` | `us-east-1` | AWS region |
+| `CERTIFICATE_SIGNING_SECRET` | `change-me-certificate-secret` | HMAC secret for tamper-proof codes |
+| `CERTIFICATE_BASE_URL` | `https://docfliq.com/certificates` | Public verification URL prefix |
 
 ---
 
