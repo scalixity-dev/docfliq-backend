@@ -1,0 +1,937 @@
+{
+  "info": {
+    "name": "Docfliq Identity Service (MS-1)",
+    "_postman_id": "d7e8f9a0-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
+    "description": "Complete API collection for the Docfliq Identity Service.\n\n## Quick Start\n1. Run **Register** or **Login** — tokens are auto-saved to collection variables\n2. All protected requests use `{{access_token}}` via Bearer auth automatically\n3. Use **Refresh Token** to get a new token pair when the access token expires (15 min)\n\n## Collection Variables\n| Variable | Description |\n|---|---|\n| `base_url` | Change to point to staging/production |\n| `access_token` | Auto-populated on login/register |\n| `refresh_token` | Auto-populated on login/register |\n| `user_id` | Auto-populated on register; set manually for other accounts |\n| `target_user_id` | UUID of another user for follow/block/mute |\n| `doc_id` | Verification document UUID from the admin queue |\n| `report_id` | Report UUID from the admin reports list |\n\n## Roles\n`doctor_specialist` · `doctor_gp` · `nurse` · `student` · `pharmacist` · `admin`\n\n## Token Lifetimes\n- Access token: **15 minutes** (`expires_in: 900`)\n- Refresh token: **7 days**\n- OTP: **5 minutes**\n- Email verification link: **24 hours**\n- Password reset link: **1 hour**",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001/api/v1",
+      "type": "string",
+      "description": "Base URL. Change to staging or production as needed."
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT access token (15 min). Auto-populated by login/register/otp-verify test scripts."
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string",
+      "description": "Refresh token (7 days). Auto-populated by login/register/otp-verify test scripts."
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string",
+      "description": "Current user UUID. Auto-populated by register test script."
+    },
+    {
+      "key": "target_user_id",
+      "value": "",
+      "type": "string",
+      "description": "UUID of another user — for follow/block/mute/report/profile endpoints."
+    },
+    {
+      "key": "doc_id",
+      "value": "",
+      "type": "string",
+      "description": "Verification document UUID — copy from admin queue response."
+    },
+    {
+      "key": "report_id",
+      "value": "",
+      "type": "string",
+      "description": "Report UUID — copy from admin reports list response."
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "description": "Registration, login (email+password and OTP), token refresh/logout, password reset (OTP + magic link), and email verification.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"full_name\": \"Dr. John Smith\",\n  \"role\": \"doctor_specialist\",\n  \"phone_number\": \"+919876543210\",\n  \"specialty\": \"Cardiology\",\n  \"sub_specialty\": \"Interventional\",\n  \"years_of_experience\": 10,\n  \"medical_license_number\": \"MCI-2024-001\",\n  \"hospital_name\": \"City Heart Hospital\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Create a new account. Role-specific fields:\n\n**doctor_specialist / doctor_gp / nurse:** `medical_license_number`, `hospital_name`\n**nurse:** also `certification`\n**student:** `university`, `graduation_year`, `student_id`\n**pharmacist:** `pharmacist_license_number`, `pharmacy_name`\n\nReturns a token pair. Rate limit: 3/hour per IP."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var body = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', body.tokens.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.tokens.refresh_token);",
+                  "    pm.collectionVariables.set('user_id', body.user.id);",
+                  "    console.log('✓ Tokens and user_id saved to collection variables');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@example.com\",\n  \"password\": \"SecurePass123!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticate with email and password. Returns a JWT access token (15 min) and refresh token (7 days).\n\nRate limit: 5 attempts per 15 minutes per IP.\nAccount locks after 5 consecutive failures (30-min lockout) — security alert sent by email."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var body = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "    console.log('✓ Tokens saved to collection variables');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Rotate the refresh token and issue a new access + refresh pair. The old refresh token is immediately invalidated (prevents replay attacks).\n\nReturns 401 if the token is expired, invalid, or the user's account is banned/suspended/inactive."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var body = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "    console.log('✓ New tokens saved to collection variables');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Invalidate the given session (logout from one device). Returns 204 No Content.\n\nTo logout all devices, call this endpoint once per session using each refresh token. Sessions are also invalidated automatically when a user is suspended."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 204) {",
+                  "    pm.collectionVariables.set('access_token', '');",
+                  "    pm.collectionVariables.set('refresh_token', '');",
+                  "    console.log('✓ Tokens cleared from collection variables');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Request OTP (SMS)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"+919876543210\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/otp/request",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "otp", "request"]
+            },
+            "description": "Generate a 6-digit OTP and send it via SMS to the given phone number.\n\nPhone number must be in E.164 format (e.g. +919876543210).\n\nOTP is stored in Redis (5-min TTL) with PostgreSQL as fallback.\n\n**Note:** SMS dispatch via Twilio is stubbed — OTP is stored but not yet sent. Rate limit: 3/10 minutes per IP."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP (Phone Login)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"+919876543210\",\n  \"otp_code\": \"123456\",\n  \"full_name\": \"Jane Doe\",\n  \"role\": \"student\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "otp", "verify"]
+            },
+            "description": "Verify the 6-digit OTP and authenticate the user.\n\n**First-time registration:** `full_name` and `role` are required — the user account is created on this call.\n**Returning users:** `full_name` and `role` are ignored.\n\nOTP verification priority:\n1. Redis (primary) — fast lookup\n2. PostgreSQL (fallback) — used during Redis outage\n\nReturns a token pair. Roles: `doctor_specialist` · `doctor_gp` · `nurse` · `student` · `pharmacist`"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var body = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "    console.log('✓ Tokens saved to collection variables');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Request Password Reset",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/password-reset/request",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "password-reset", "request"]
+            },
+            "description": "Send a password reset email containing both:\n1. A **6-digit OTP** (expires in 15 minutes) — use with `/confirm`\n2. A **magic link** (expires in 1 hour) — use with `/confirm-link`\n\n**Always returns 200** even if the email is not registered (prevents account enumeration).\n\nRate limit: 3/hour per IP."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm Password Reset (OTP)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@example.com\",\n  \"otp_code\": \"123456\",\n  \"new_password\": \"NewSecurePass456!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/password-reset/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "password-reset", "confirm"]
+            },
+            "description": "Verify the 6-digit OTP from the reset email, update the password, and **invalidate all active sessions** (forces re-login on all devices).\n\n`otp_code` must be exactly 6 characters. `new_password` min 8, max 128 chars."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm Password Reset (Magic Link)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_TOKEN_FROM_EMAIL_LINK_HERE\",\n  \"new_password\": \"NewSecurePass456!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/password-reset/confirm-link",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "password-reset", "confirm-link"]
+            },
+            "description": "Validate the URL-safe token from the reset link (1-hour expiry, single-use), update the password, and **invalidate all active sessions**.\n\nThe token is the value of the `token` query parameter in the reset link from the email."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/email/verify?token=PASTE_TOKEN_FROM_EMAIL_LINK_HERE",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "email", "verify"],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "PASTE_TOKEN_FROM_EMAIL_LINK_HERE",
+                  "description": "24-hour verification token from the email link"
+                }
+              ]
+            },
+            "description": "Verify the user's email address using the token from the verification email sent on registration.\n\nToken TTL: 24 hours. Marks `email_verified = true` on the user record."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Email Verification",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/email/resend-verification",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "email", "resend-verification"]
+            },
+            "description": "Generate a fresh 24-hour email verification link and send it to the authenticated user's email address.\n\n**Requires Bearer token.** The previous token remains valid until its TTL runs out."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👤 Profile",
+      "description": "View and update user profiles. All routes require Bearer token.",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me"]
+            },
+            "description": "Get the full profile of the authenticated user, including computed fields:\n- `profile_complete` — true if all role-required fields are filled\n- `missing_required_fields` — list of fields that still need to be provided\n- `capabilities` — role/verification-based permission flags"
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Dr. John Smith\",\n  \"specialty\": \"Cardiology\",\n  \"sub_specialty\": \"Interventional Cardiology\",\n  \"years_of_experience\": 12,\n  \"location_city\": \"Mumbai\",\n  \"location_state\": \"Maharashtra\",\n  \"location_country\": \"India\",\n  \"bio\": \"Cardiologist with 12 years of experience specializing in interventional procedures.\",\n  \"interests\": [\"Cardiology\", \"Medical Education\", \"Research\"],\n  \"medical_license_number\": \"MCI-2024-001\",\n  \"hospital_name\": \"City Heart Hospital\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me"]
+            },
+            "description": "Partially update the authenticated user's profile. Only provided fields are written — omitted fields are left unchanged (true PATCH semantics).\n\nAll fields are optional. Role-specific fields:\n- **Doctor/Nurse:** `medical_license_number`, `hospital_name`\n- **Nurse:** also `certification`\n- **Student:** `university`, `graduation_year` (1980–2060), `student_id`\n- **Pharmacist:** `pharmacist_license_number`, `pharmacy_name`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}"]
+            },
+            "description": "Get another user's public profile.\n\nReturns **404** if the target user has blocked you (same as not-found — hides block status).\n\nSet `target_user_id` collection variable to the UUID of the user to view."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "✅ Verification",
+      "description": "Professional document verification. Step 1: upload → Step 2: confirm. Requires Bearer token.",
+      "item": [
+        {
+          "name": "Step 1 — Request Upload URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_type\": \"medical_license\",\n  \"content_type\": \"application/pdf\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users/me/verify/upload",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "verify", "upload"]
+            },
+            "description": "Get a presigned S3 PUT URL to upload a verification document.\n\n**Document types:** `medical_license` · `id_card` · `degree`\n**Content types:** `image/jpeg` · `image/png` · `application/pdf` (default)\n\nThe returned `upload_url` expires in **15 minutes**. After uploading directly to S3, call `/confirm` with the returned `document_key`."
+          },
+          "response": []
+        },
+        {
+          "name": "Step 2 — Confirm Upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_key\": \"verifications/PASTE_UUID_HERE/PASTE_KEY_FROM_UPLOAD_RESPONSE\",\n  \"document_type\": \"medical_license\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users/me/verify/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "verify", "confirm"]
+            },
+            "description": "Confirm the S3 upload is complete and submit the document for admin review.\n\nUse the `document_key` from the `/upload` response.\n\n**Effects:**\n- Creates a `PENDING` verification record\n- Advances user `verification_status` → `PENDING`\n- Sends a submission confirmation email via Brevo\n\n**Errors:** `400` document key not found in S3 · `409` account already verified · `413` file exceeds 10 MB"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Admin — Verification",
+      "description": "Admin-only verification management. Requires Bearer token with admin or super_admin role.",
+      "item": [
+        {
+          "name": "Get Verification Queue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/verification/queue?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "queue"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (min: 1)"
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "description": "Items per page (1–100, default: 20)"
+                }
+              ]
+            },
+            "description": "List `PENDING` verification documents in priority order: Doctors and Pharmacists first, then other roles — FIFO within each tier.\n\nEach item includes `doc_id` — use it for the View Document and Review endpoints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var body = pm.response.json();",
+                  "    if (body.items && body.items.length > 0) {",
+                  "        pm.collectionVariables.set('doc_id', body.items[0].id);",
+                  "        console.log('✓ doc_id set to first item: ' + body.items[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "View Document (Presigned URL)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/verification/{{doc_id}}/document",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "{{doc_id}}", "document"]
+            },
+            "description": "Get a 30-minute presigned S3 GET URL to view or download the uploaded verification document in-browser.\n\nSet `doc_id` variable from the queue response (or run Get Verification Queue first)."
+          },
+          "response": []
+        },
+        {
+          "name": "Review Document — Approve",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\",\n  \"notes\": \"Document verified. License number confirmed.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/verification/{{doc_id}}/review",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "{{doc_id}}", "review"]
+            },
+            "description": "**APPROVE** a verification document.\n\n**Effects:**\n- `verification_status` → `VERIFIED`\n- `content_creation_mode = true`\n- Approval email sent to user\n\nIdempotent — returns 409 if already approved."
+          },
+          "response": []
+        },
+        {
+          "name": "Review Document — Reject",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\",\n  \"notes\": \"License number is not clearly visible. Please re-upload a higher resolution image.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/verification/{{doc_id}}/review",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "{{doc_id}}", "review"]
+            },
+            "description": "**REJECT** a verification document.\n\n**Effects:**\n- `verification_status` → `REJECTED`\n- User can re-upload a new document\n- Rejection email with reason (`notes`) sent to user\n\n`notes` is **required** for rejection (max 1000 chars)."
+          },
+          "response": []
+        },
+        {
+          "name": "Suspend User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Fraudulent medical licence detected. Account suspended pending investigation.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/verification/users/{{target_user_id}}/suspend",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "users", "{{target_user_id}}", "suspend"]
+            },
+            "description": "Suspend a verified user.\n\n**Effects:**\n- `verification_status` → `SUSPENDED`\n- All active refresh-token sessions are **immediately invalidated** (user is logged out on every device)\n- Suspension notification email sent with the reason\n\n`reason` is communicated to the user in the email (max 500 chars).\n\nErrors: `409` if already suspended."
+          },
+          "response": []
+        },
+        {
+          "name": "Reinstate User",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/verification/users/{{target_user_id}}/reinstate",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification", "users", "{{target_user_id}}", "reinstate"]
+            },
+            "description": "Reinstate a suspended user back to `VERIFIED`. Clears the `ban_reason`.\n\nNo email is sent automatically on reinstatement.\n\nErrors: `409` if user is not currently suspended."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🌐 Social Graph",
+      "description": "Follows, blocks, mutes, reports, and list operations. All routes require Bearer token.",
+      "item": [
+        {
+          "name": "Follow User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/follow",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "follow"]
+            },
+            "description": "Follow a user (unidirectional — Twitter-style).\n\nFollow limit: **5,000** per user.\nRate limit: **50 follow actions per hour** per IP.\n\nErrors:\n- `409` already following\n- `409` target user is blocked by you\n- `422` cannot follow yourself\n- `422` follow limit reached (5,000)"
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/follow",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "follow"]
+            },
+            "description": "Unfollow a user. Returns 204 No Content.\n\nErrors: `404` not currently following."
+          },
+          "response": []
+        },
+        {
+          "name": "Block User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/block",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "block"]
+            },
+            "description": "Block a user.\n\n**Side effects:**\n- Follow edges in **both directions** are automatically removed\n- The blocked user cannot see your profile, following list, or followers list (all return 404)\n- The blocked user cannot follow you\n\nErrors:\n- `409` already blocking\n- `422` cannot block yourself"
+          },
+          "response": []
+        },
+        {
+          "name": "Unblock User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/block",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "block"]
+            },
+            "description": "Remove a block. Returns 204 No Content.\n\nNote: unblocking does **not** restore follow edges that were removed when blocking.\n\nErrors: `404` not currently blocking."
+          },
+          "response": []
+        },
+        {
+          "name": "Mute User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/mute",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "mute"]
+            },
+            "description": "Mute a user. Their content will be hidden from your feed.\n\nUnlike block: the muted user's profile remains visible, they can still follow you, and they are **not notified**.\n\nErrors:\n- `409` already muted\n- `422` cannot mute yourself"
+          },
+          "response": []
+        },
+        {
+          "name": "Unmute User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/mute",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "mute"]
+            },
+            "description": "Remove a mute. Returns 204 No Content.\n\nErrors: `404` not currently muted."
+          },
+          "response": []
+        },
+        {
+          "name": "Report User / Content",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_type\": \"user\",\n  \"target_id\": \"{{target_user_id}}\",\n  \"reason\": \"Spreading medical misinformation that could harm patients.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/report",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "report"]
+            },
+            "description": "Submit a report for admin review.\n\n`target_type` values: `user` · `post` · `comment` · `webinar`\n\n`target_id` is the UUID of the specific item being reported (user ID, post ID, etc.).\n\n`reason` must be 1–255 characters.\n\nThe report enters the admin review queue with status `open`."
+          },
+          "response": []
+        },
+        {
+          "name": "My Following List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me/following?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "following"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "List all users the authenticated user is following, with pagination.\n\nEach item includes `is_followed_by_me: true` (always true for this endpoint — they follow back is shown by their listing you as a follower)."
+          },
+          "response": []
+        },
+        {
+          "name": "My Followers List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me/followers?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "followers"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "List all users who follow the authenticated user, with pagination.\n\nEach item includes `is_followed_by_me` — indicates whether you are following that person back."
+          },
+          "response": []
+        },
+        {
+          "name": "My Blocked List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me/blocked?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "blocked"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "List all users the authenticated user has blocked."
+          },
+          "response": []
+        },
+        {
+          "name": "My Muted List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/me/muted?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "me", "muted"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "List all users the authenticated user has muted."
+          },
+          "response": []
+        },
+        {
+          "name": "View User's Following List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/following?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "following"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "View another user's following list.\n\nReturns **404** if that user has blocked you (same response as user-not-found — hides block status).\n\nEach item includes `is_followed_by_me` — indicates whether you follow that person."
+          },
+          "response": []
+        },
+        {
+          "name": "View User's Followers List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{target_user_id}}/followers?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{target_user_id}}", "followers"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "View another user's followers list.\n\nReturns **404** if that user has blocked you."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Admin — Social Graph",
+      "description": "Admin-only report management. Requires Bearer token with admin or super_admin role.",
+      "item": [
+        {
+          "name": "List Reports",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/social/reports?page=1&size=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "social", "reports"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open",
+                  "description": "Filter by status: open · reviewed · actioned · dismissed (omit for all)",
+                  "disabled": true
+                },
+                { "key": "page", "value": "1", "description": "Page number (min: 1)" },
+                { "key": "size", "value": "20", "description": "Items per page (1–100)" }
+              ]
+            },
+            "description": "List all user/content reports. Optionally filter by status.\n\n**Status values:** `open` · `reviewed` · `actioned` · `dismissed`\n\nUncheck the `status` query param to return all reports regardless of status.\nResults are ordered oldest-first (FIFO review queue)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var body = pm.response.json();",
+                  "    if (body.items && body.items.length > 0) {",
+                  "        pm.collectionVariables.set('report_id', body.items[0].id);",
+                  "        console.log('✓ report_id set to first item: ' + body.items[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Review Report",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"actioned\",\n  \"action_taken\": \"User warned. Content removed. Repeat offence will result in suspension.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/social/reports/{{report_id}}/review",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "social", "reports", "{{report_id}}", "review"]
+            },
+            "description": "Set the review outcome for a report.\n\n**Status values:**\n- `reviewed` — report has been reviewed, no action taken\n- `actioned` — action was taken (e.g. warning, content removal, suspension)\n- `dismissed` — report was found to be invalid or in bad faith\n\n`action_taken` is optional, max 100 chars."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "❤️ Health",
+      "description": "Service health check.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8001/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8001",
+              "path": ["health"]
+            },
+            "description": "Returns `{\"status\": \"ok\", \"service\": \"identity\"}` when the service is running.\n\nNote: This endpoint is at the root path, not under `/api/v1`."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
