@@ -27,8 +27,9 @@ _DESCRIPTION = """
 
 Handles all user identity concerns for the Docfliq platform:
 
-* **Authentication** — email/password and phone OTP login, JWT access + refresh tokens,
-  session management (up to 5 active sessions per user), per-account login lockout.
+* **Authentication** — email/password and phone OTP login (Twilio Verify SMS),
+  JWT access + refresh tokens, session management (up to 5 active sessions per user),
+  per-account login lockout.
 * **Registration** — role-based sign-up (Doctor, Pharmacist, Student, etc.) with
   role-specific profile fields.
 * **Password reset** — via 6-digit OTP (email) or 1-hour magic link.

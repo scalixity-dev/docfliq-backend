@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Leave empty to disable admin notifications (e.g. in development).
     admin_notification_email: str = ""
 
+    # ── Twilio Verify (OTP via SMS) ─────────────────────────────────────────────
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_verify_service_sid: str = ""
+
     # ── App URLs ───────────────────────────────────────────────────────────────
     # Used to build email verification links. No trailing slash.
     app_base_url: str = "http://localhost:3000"

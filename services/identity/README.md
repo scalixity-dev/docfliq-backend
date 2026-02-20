@@ -202,7 +202,9 @@ Invalidate a single session (device logout).
 
 ### POST `/api/v1/auth/otp/request`
 
-Request a 6-digit OTP via SMS (mobile login). ⚠️ SMS (Twilio) not yet wired — endpoint defined but no-ops.
+Request a 6-digit OTP via SMS (mobile login).
+
+When **Twilio Verify** is configured (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`), Twilio generates and delivers the OTP via SMS. When Twilio is **not** configured (development), the OTP is generated locally and stored in Redis/PostgreSQL but no SMS is sent.
 
 **Rate limit:** 3 requests / 10 minutes per IP
 
@@ -215,6 +217,8 @@ Request a 6-digit OTP via SMS (mobile login). ⚠️ SMS (Twilio) not yet wired 
 ```json
 { "message": "OTP sent successfully." }
 ```
+
+**Errors:** `502` SMS delivery temporarily unavailable (Twilio down)
 
 ---
 
@@ -330,7 +334,7 @@ Resend the email verification link. Generates a fresh 24-hour token (previous to
 
 ### POST `/api/v1/auth/otp/verify`
 
-Verify OTP and get tokens. Creates account on first use (requires `full_name` + `role`).
+Verify OTP and get tokens. Creates account on first use (requires `full_name` + `role`). When Twilio Verify is configured, the code is verified by Twilio's API; otherwise it is checked against local Redis/PostgreSQL storage.
 
 **Request:**
 ```json
@@ -1001,7 +1005,7 @@ The following features are specified in the MS-1 spec but are pending a future i
 | ~~**Email verification link**~~ | ✅ Implemented — 24h token stored in Redis, sent via Brevo on registration. `GET /auth/email/verify?token=` + `POST /auth/email/resend-verification`. Flag stored in `users.email_verified` (migration 004). |
 | **Institutional SSO** (SAML 2.0 / OIDC) | Requires external IdP integration (e.g. Azure AD, Okta). No code exists yet. |
 | ~~**Per-account login lockout**~~ | ✅ Implemented — 5 failed attempts (15-min window) → 30-min account lock stored in Redis + security alert email via Brevo. |
-| **Twilio SMS dispatch** | `POST /auth/otp/request` saves and hashes the OTP in the DB but does not send an SMS. A `TODO` comment marks where Twilio wiring belongs in the OTP controller. |
+| ~~**Twilio SMS dispatch**~~ | ✅ Implemented — Twilio Verify V2 sends OTP via SMS. Async httpx calls to Twilio REST API. When Twilio credentials are absent (dev mode), falls back to local Redis/PostgreSQL OTP storage with no SMS sent. Env vars: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. |
 | **SNS / SQS event emission** | No domain events (`user.registered`, `user.verified`, `user.followed`, `user.profile_updated`, `user.suspended`) are emitted yet. |
 | **Follow suggestions** | Pre-computed by Celery every 6 hours (noted as a TODO in `social_graph/service.py`). |
 | **Redis debounce for follow events** | 3-second debounce to prevent notification spam from rapid follow/unfollow cycles (noted as a TODO in `social_graph/service.py`). |

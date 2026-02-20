@@ -148,6 +148,16 @@ class OTPExhausted(HTTPException):
         )
 
 
+class SMSDeliveryFailed(HTTPException):
+    """Twilio (or other SMS provider) failed to deliver the OTP."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SMS delivery is temporarily unavailable. Please try again shortly.",
+        )
+
+
 class AccountLocked(HTTPException):
     """Raised when the account is temporarily locked after too many failed logins."""
 

@@ -161,9 +161,10 @@ async def otp_request(
     request: Request,
     body: OTPRequestSchema,
     session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
     redis: aioredis.Redis = Depends(_get_redis),
 ) -> MessageResponse:
-    await otp_request_controller(session, body, redis)
+    await otp_request_controller(session, body, redis, settings)
     return MessageResponse(message="OTP sent successfully.")
 
 

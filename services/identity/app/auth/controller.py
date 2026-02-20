@@ -69,9 +69,11 @@ from app.exceptions import (
     InvalidCredentials,
     InvalidOTP,
     OTPExhausted,
+    SMSDeliveryFailed,
     SessionNotFound,
     UserNotFound,
 )
+from app.sms import twilio
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -279,21 +281,28 @@ async def otp_request(
     session: AsyncSession,
     body: OTPRequestSchema,
     redis: aioredis.Redis,
+    settings: Settings,
 ) -> None:
     """
-    Generate a 6-digit OTP.
+    Send a 6-digit OTP via SMS to the given phone number.
 
-    Storage priority:
-      1. Redis (primary) — 5-min TTL, instant lookup
-      2. PostgreSQL (fallback) — used when Redis is unavailable
-
-    Actual SMS dispatch (Twilio) will be wired in a later phase.
+    Provider strategy:
+      1. Twilio Verify (production) — Twilio generates the OTP, sends SMS,
+         and owns the verification lifecycle.  Nothing stored locally.
+      2. Redis / PostgreSQL (development) — we generate the OTP ourselves
+         and store it locally.  No SMS is sent.
     """
+    if twilio.is_configured(settings):
+        sent = await twilio.send_otp(body.phone_number, settings)
+        if not sent:
+            raise SMSDeliveryFailed()
+        return
+
+    # Dev fallback: generate + store OTP locally (no SMS sent)
     plain_otp = f"{random.SystemRandom().randint(100_000, 999_999)}"
     try:
         await create_otp_in_redis(redis, body.phone_number, plain_otp)
     except Exception:
-        # Redis unavailable — fall back to PostgreSQL
         await create_otp(
             session,
             phone_number=body.phone_number,
@@ -301,7 +310,6 @@ async def otp_request(
             purpose=OTPPurpose.LOGIN,
             expire_seconds=OTP_EXPIRE_SECONDS,
         )
-    # TODO: dispatch plain_otp via Twilio SMS
 
 
 # ── Password reset ────────────────────────────────────────────────────────────
@@ -409,25 +417,28 @@ async def otp_verify(
     """
     Verify OTP, find-or-create the user, and issue a token pair.
 
-    Verification priority:
-      1. Redis (primary) — if OTP was stored there by otp_request
-      2. PostgreSQL (fallback) — for OTPs created during a Redis outage, or
-         if Redis raises a connection error on this call
+    Provider strategy:
+      1. Twilio Verify (production) — code checked by Twilio's API.
+      2. Redis / PostgreSQL (development) — code checked against local store.
 
     For first-time registration full_name and role are required in the body.
     """
-    try:
-        await verify_otp_from_redis(redis, body.phone_number, body.otp_code)
-    except (OTPExhausted, InvalidOTP):
-        raise  # OTP is in Redis but code is wrong/exhausted — definitive auth error
-    except Exception:
-        # OTPExpired (key missing in Redis) or Redis unavailable → try PostgreSQL
-        await verify_otp(
-            session,
-            phone_number=body.phone_number,
-            plain_otp=body.otp_code,
-            purpose=OTPPurpose.LOGIN,
-        )
+    if twilio.is_configured(settings):
+        approved = await twilio.check_otp(body.phone_number, body.otp_code, settings)
+        if not approved:
+            raise InvalidOTP(attempts_remaining=0)
+    else:
+        try:
+            await verify_otp_from_redis(redis, body.phone_number, body.otp_code)
+        except (OTPExhausted, InvalidOTP):
+            raise
+        except Exception:
+            await verify_otp(
+                session,
+                phone_number=body.phone_number,
+                plain_otp=body.otp_code,
+                purpose=OTPPurpose.LOGIN,
+            )
 
     full_name = body.full_name or "Unknown"
     role = body.role or UserRole.STUDENT
