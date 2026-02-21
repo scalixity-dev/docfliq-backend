@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "docfliq-identity"
+name = "docfliq-media"
 version = "0.1.0"
-description = "Docfliq Identity microservice — auth, profile, verification, social graph"
+description = "Docfliq Media Processing microservice — upload, transcode, image processing, secure URLs"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi>=0.109",
@@ -16,10 +16,7 @@ dependencies = [
     "asyncpg>=0.29",
     "redis>=5.0",
     "python-jose[cryptography]>=3.3",
-    "passlib[argon2]>=1.7",
     "slowapi>=0.1.9",
-    "httpx>=0.27",
-    "aiosmtplib>=3.0",
     "aioboto3>=13.0",
     "docfliq-shared",
 ]
@@ -29,7 +26,6 @@ docfliq-shared = { path = "../../shared", editable = true }
 
 [project.optional-dependencies]
 dev = [
-    "alembic>=1.13",
     "pytest>=7",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",

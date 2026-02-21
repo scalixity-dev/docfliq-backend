@@ -142,6 +142,16 @@ class User(Base):
     interests: Mapped[list[str] | None] = mapped_column(
         ARRAY(sa.String(100)), nullable=True
     )
+    # Onboarding preferences (Step 1: purposes, Step 3: event schedule, languages)
+    purposes: Mapped[list[str] | None] = mapped_column(
+        ARRAY(sa.String(100)), nullable=True
+    )
+    event_schedule: Mapped[list[str] | None] = mapped_column(
+        ARRAY(sa.String(100)), nullable=True
+    )
+    languages: Mapped[list[str] | None] = mapped_column(
+        ARRAY(sa.String(100)), nullable=True
+    )
 
     # ── Content creation gate ─────────────────────────────────────────────────
     # Set to True when user becomes VERIFIED and is eligible to create content
