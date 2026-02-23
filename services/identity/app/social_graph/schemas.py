@@ -73,6 +73,14 @@ class SocialRelationListResponse(BaseModel):
     size: int
 
 
+# ── Suggestions ───────────────────────────────────────────────────────────────
+
+class SuggestionListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[SocialUserRef]
+
+
 # ── Report ─────────────────────────────────────────────────────────────────────
 
 class ReportRequest(_Base):

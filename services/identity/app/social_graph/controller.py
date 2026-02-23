@@ -21,6 +21,7 @@ from app.social_graph.schemas import (
     SocialRelationItem,
     SocialRelationListResponse,
     SocialUserRef,
+    SuggestionListResponse,
 )
 
 
@@ -176,6 +177,16 @@ async def list_muted(
     rows, total = await svc.get_muted(session, user_id, page=page, size=size)
     items = [SocialRelationItem(id=m.mute_id, user=_user_ref(u), created_at=m.created_at) for m, u in rows]
     return SocialRelationListResponse(items=items, total=total, page=page, size=size)
+
+
+async def list_suggestions(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    size: int,
+) -> SuggestionListResponse:
+    users = await svc.get_suggestions(session, user_id, size=size)
+    items = [_user_ref(u) for u in users]
+    return SuggestionListResponse(items=items)
 
 
 async def report_user(

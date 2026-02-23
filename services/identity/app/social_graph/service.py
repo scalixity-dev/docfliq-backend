@@ -332,6 +332,40 @@ async def get_muted(
     return rows_r.all(), total
 
 
+# ── Suggestions ───────────────────────────────────────────────────────────────
+
+async def get_suggestions(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    size: int,
+) -> list[User]:
+    """
+    Return up to `size` users that the current user does NOT follow,
+    has NOT blocked, and is NOT blocked by.  Excludes self.
+    Ordered by newest accounts first.
+    """
+    # Sub-queries for exclusion
+    following_ids = sa.select(Follow.following_id).where(Follow.follower_id == user_id)
+    blocked_ids = sa.select(Block.blocked_id).where(Block.blocker_id == user_id)
+    blocked_by_ids = sa.select(Block.blocker_id).where(Block.blocked_id == user_id)
+
+    stmt = (
+        sa.select(User)
+        .where(
+            User.id != user_id,
+            User.is_active == True,  # noqa: E712
+            User.id.notin_(following_ids),
+            User.id.notin_(blocked_ids),
+            User.id.notin_(blocked_by_ids),
+        )
+        .order_by(User.created_at.desc())
+        .limit(size)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 # ── Report ─────────────────────────────────────────────────────────────────────
 
 async def create_report(

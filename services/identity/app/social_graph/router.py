@@ -12,6 +12,7 @@ Routes:
   POST   /{user_id}/mute           Mute
   DELETE /{user_id}/mute           Unmute
   POST   /{user_id}/report         Report a user/content
+  GET    /me/suggestions           Suggested users to follow
   GET    /me/following             Who I follow (paginated)
   GET    /me/followers             Who follows me (paginated)
   GET    /me/blocked               My block list (paginated)
@@ -38,6 +39,7 @@ from app.social_graph.schemas import (
     ReportRequest,
     ReportResponse,
     SocialRelationListResponse,
+    SuggestionListResponse,
 )
 from shared.models.user import CurrentUser
 
@@ -155,6 +157,20 @@ async def report_user(
 
 
 # ── My lists (must be registered before /{user_id}/... to avoid mis-routing) ──
+
+@router.get(
+    "/me/suggestions",
+    response_model=SuggestionListResponse,
+    summary="Suggest users to follow",
+    description="Returns users the current user does not follow (excludes blocked users and self).",
+)
+async def my_suggestions(
+    size: int = Query(10, ge=1, le=50, description="Number of suggestions"),
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> SuggestionListResponse:
+    return await ctrl.list_suggestions(session, current_user.id, size=size)
+
 
 @router.get(
     "/me/following",
