@@ -57,6 +57,10 @@ class UpdateProfileRequest(_Base):
     # Pharmacist
     pharmacist_license_number: str | None = Field(None, max_length=100)
     pharmacy_name: str | None = Field(None, max_length=200)
+    # Phone number (E.164 format, e.g. "+919876543210")
+    phone_number: str | None = Field(None, max_length=20)
+    # Notification preferences — JSONB dict of channel toggles
+    notification_preferences: dict | None = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -91,6 +95,7 @@ class ProfileResponse(BaseModel):
 
     id: uuid.UUID
     email: str
+    phone_number: str | None
     full_name: str
     role: UserRole
     specialty: str | None
@@ -120,6 +125,8 @@ class ProfileResponse(BaseModel):
     # Pharmacist
     pharmacist_license_number: str | None
     pharmacy_name: str | None
+    # Notification preferences
+    notification_preferences: dict | None
     created_at: datetime
 
     @computed_field  # type: ignore[misc]

@@ -191,6 +191,16 @@ class User(Base):
     )
     pharmacy_name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
 
+    # ── Notification preferences ──────────────────────────────────────────────
+    # JSONB dict storing per-channel toggles — all ON by default for new users
+    notification_preferences: Mapped[dict | None] = mapped_column(
+        JSONB(),
+        nullable=True,
+        server_default=sa.text(
+            "'{\"email\": true, \"push\": true, \"course\": true, \"webinar\": true, \"marketing\": true}'::jsonb"
+        ),
+    )
+
     # ── JWT authorization roles (USER / CREATOR / ADMIN / SUPER_ADMIN) ────────
     # Separate from `role` — these drive permission checks across all services.
     roles: Mapped[list[str]] = mapped_column(
