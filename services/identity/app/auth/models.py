@@ -163,6 +163,14 @@ class User(Base):
         index=True,
     )
 
+    # ── OAuth provider identifiers ─────────────────────────────────────────────
+    google_id: Mapped[str | None] = mapped_column(
+        sa.String(255), unique=True, nullable=True, index=True
+    )
+    microsoft_id: Mapped[str | None] = mapped_column(
+        sa.String(255), unique=True, nullable=True, index=True
+    )
+
     # ── Doctor-specific ───────────────────────────────────────────────────────
     medical_license_number: Mapped[str | None] = mapped_column(
         sa.String(100), unique=True, nullable=True, index=True

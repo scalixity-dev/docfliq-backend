@@ -640,6 +640,90 @@ async def verify_password_reset_link_token(
     await reset_password(session, email=email, new_password=new_password)
 
 
+async def get_user_by_google_id(
+    session: AsyncSession, google_id: str
+) -> User | None:
+    result = await session.execute(
+        select(User).where(User.google_id == google_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_microsoft_id(
+    session: AsyncSession, microsoft_id: str
+) -> User | None:
+    result = await session.execute(
+        select(User).where(User.microsoft_id == microsoft_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def find_or_create_oauth_user(
+    session: AsyncSession,
+    *,
+    provider: str,
+    provider_id: str,
+    email: str,
+    full_name: str,
+    picture_url: str | None = None,
+    email_verified: bool = False,
+) -> tuple[User, bool]:
+    """
+    Find an existing user by OAuth provider ID or email, or create a new one.
+
+    Returns (user, is_new_user).
+
+    Link priority:
+      1. Look up by provider_id (google_id / microsoft_id) — strongest link.
+      2. Look up by email — if found, link the provider_id to the existing account.
+      3. Create a new account.
+    """
+    # 1. Look up by provider ID
+    if provider == "google":
+        user = await get_user_by_google_id(session, provider_id)
+    else:
+        user = await get_user_by_microsoft_id(session, provider_id)
+
+    if user is not None:
+        assert_account_usable(user)
+        return user, False
+
+    # 2. Look up by email — link the provider to the existing account
+    user = await get_user_by_email(session, email)
+    if user is not None:
+        assert_account_usable(user)
+        if provider == "google":
+            user.google_id = provider_id
+        else:
+            user.microsoft_id = provider_id
+        # If the provider says the email is verified, trust it
+        if email_verified and not user.email_verified:
+            user.email_verified = True
+        if picture_url and not user.profile_image_url:
+            user.profile_image_url = picture_url
+        await session.flush()
+        return user, False
+
+    # 3. Create new account
+    kwargs: dict = {
+        "email": email,
+        "full_name": full_name,
+        "role": UserRole.STUDENT,  # default for OAuth users; profile setup changes later
+        "roles": [Role.USER.value],
+        "email_verified": email_verified,
+        "profile_image_url": picture_url,
+    }
+    if provider == "google":
+        kwargs["google_id"] = provider_id
+    else:
+        kwargs["microsoft_id"] = provider_id
+
+    new_user = User(**kwargs)
+    session.add(new_user)
+    await session.flush()
+    return new_user, True
+
+
 async def find_or_create_user_by_phone(
     session: AsyncSession,
     phone_number: str,
@@ -670,6 +754,56 @@ async def find_or_create_user_by_phone(
     session.add(new_user)
     await session.flush()
     return new_user, True
+
+
+async def find_or_create_user_by_email(
+    session: AsyncSession,
+    email: str,
+    *,
+    full_name: str,
+    role: UserRole,
+) -> tuple[User, bool]:
+    """
+    Return (user, is_new_user).
+
+    Called by the email OTP login endpoint after a successful OTP check.
+    For returning users, full_name and role are ignored.
+    """
+    user = await get_user_by_email(session, email)
+    if user is not None:
+        assert_account_usable(user)
+        return user, False
+
+    new_user = User(
+        email=email,
+        full_name=full_name,
+        role=role,
+        roles=[Role.USER.value],
+        email_verified=True,
+    )
+    session.add(new_user)
+    await session.flush()
+    return new_user, True
+
+
+async def change_user_password(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    current_password: str,
+    new_password: str,
+) -> None:
+    """
+    Change the user's password after verifying the current one.
+
+    Does NOT invalidate existing sessions (unlike reset_password).
+    """
+    user = await get_user_by_id(session, user_id)
+    if user is None:
+        raise UserNotFound()
+    if not user.password_hash or not verify_password(current_password, user.password_hash):
+        raise InvalidCredentials()
+    user.password_hash = hash_password(new_password)
+    await session.flush()
 
 
 # ── Email verification (Redis-backed, 24h TTL) ────────────────────────────────

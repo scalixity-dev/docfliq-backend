@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Used to build email verification links. No trailing slash.
     app_base_url: str = "http://localhost:3000"
 
+    # ── OAuth (Google + Microsoft) ──────────────────────────────────────────────
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
+
     # ── AWS / S3 ───────────────────────────────────────────────────────────────
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""

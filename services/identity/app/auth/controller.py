@@ -21,10 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import OTP_EXPIRE_SECONDS, OTPPurpose, UserRole
 from app.auth.schemas import (
+    ChangePasswordRequest,
+    EmailOTPLoginRequest,
     EmailOTPRequestSchema,
     EmailOTPVerifyRequest,
     LoginRequest,
     LogoutRequest,
+    OAuthCallbackRequest,
     OTPRequestSchema,
     OTPVerifyRequest,
     PasswordResetConfirmSchema,
@@ -39,6 +42,7 @@ from app.auth.schemas import (
 from app.auth.service import (
     assert_account_usable,
     authenticate_user,
+    change_user_password,
     check_login_lock,
     clear_failed_logins,
     create_access_token,
@@ -49,6 +53,8 @@ from app.auth.service import (
     create_password_reset_link_token,
     create_password_reset_otp,
     create_session,
+    find_or_create_oauth_user,
+    find_or_create_user_by_email,
     find_or_create_user_by_phone,
     generate_refresh_token,
     get_session_by_refresh_token,
@@ -66,6 +72,10 @@ from app.auth.service import (
     verify_otp_from_redis,
     verify_password_reset_link_token,
     verify_password_reset_otp,
+)
+from app.auth.oauth import (
+    exchange_google_code,
+    exchange_microsoft_code,
 )
 from app.config import Settings
 from app.email import send as email
@@ -530,3 +540,172 @@ async def email_otp_verify(
     if user is not None:
         user.email_verified = True
         await session.flush()
+
+
+# ── OAuth: Google ──────────────────────────────────────────────────────────
+
+async def oauth_google(
+    session: AsyncSession,
+    body: OAuthCallbackRequest,
+    settings: Settings,
+    *,
+    ip_address: str | None = None,
+    device_id: str | None = None,
+    device_info: dict | None = None,
+) -> TokenResponse:
+    """
+    Exchange a Google authorization code for user info, find-or-create the
+    user, and issue a JWT token pair.
+    """
+    user_info = await exchange_google_code(
+        code=body.code,
+        redirect_uri=body.redirect_uri,
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+    )
+
+    user, _ = await find_or_create_oauth_user(
+        session,
+        provider=user_info.provider,
+        provider_id=user_info.provider_id,
+        email=user_info.email,
+        full_name=user_info.full_name,
+        picture_url=user_info.picture_url,
+        email_verified=user_info.email_verified,
+    )
+    await record_login(session, user)
+
+    access_token, refresh_token = _build_token_pair(
+        user.id, user.email, user.roles, settings
+    )
+    await create_session(
+        session,
+        user_id=user.id,
+        refresh_token=refresh_token,
+        device_id=device_id,
+        device_info=device_info,
+        ip_address=ip_address,
+        expire_seconds=settings.jwt_refresh_expire_seconds,
+    )
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.jwt_expire_seconds,
+    )
+
+
+# ── OAuth: Microsoft ──────────────────────────────────────────────────────
+
+async def oauth_microsoft(
+    session: AsyncSession,
+    body: OAuthCallbackRequest,
+    settings: Settings,
+    *,
+    ip_address: str | None = None,
+    device_id: str | None = None,
+    device_info: dict | None = None,
+) -> TokenResponse:
+    """
+    Exchange a Microsoft authorization code for user info, find-or-create the
+    user, and issue a JWT token pair.
+    """
+    user_info = await exchange_microsoft_code(
+        code=body.code,
+        redirect_uri=body.redirect_uri,
+        client_id=settings.microsoft_client_id,
+        client_secret=settings.microsoft_client_secret,
+    )
+
+    user, _ = await find_or_create_oauth_user(
+        session,
+        provider=user_info.provider,
+        provider_id=user_info.provider_id,
+        email=user_info.email,
+        full_name=user_info.full_name,
+        picture_url=user_info.picture_url,
+        email_verified=user_info.email_verified,
+    )
+    await record_login(session, user)
+
+    access_token, refresh_token = _build_token_pair(
+        user.id, user.email, user.roles, settings
+    )
+    await create_session(
+        session,
+        user_id=user.id,
+        refresh_token=refresh_token,
+        device_id=device_id,
+        device_info=device_info,
+        ip_address=ip_address,
+        expire_seconds=settings.jwt_refresh_expire_seconds,
+    )
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.jwt_expire_seconds,
+    )
+
+
+# ── Email OTP: login ─────────────────────────────────────────────────────────
+
+async def email_otp_login(
+    session: AsyncSession,
+    body: EmailOTPLoginRequest,
+    settings: Settings,
+    redis: aioredis.Redis,
+    *,
+    ip_address: str | None = None,
+    device_id: str | None = None,
+    device_info: dict | None = None,
+) -> TokenResponse:
+    """
+    Verify email OTP, find-or-create the user, and issue a token pair.
+
+    Mirrors the phone OTP verify flow but for email-based OTP.
+    """
+    await verify_email_otp_from_redis(redis, body.email, body.otp_code)
+
+    full_name = body.full_name or "Unknown"
+    role = body.role or UserRole.STUDENT
+
+    user, _ = await find_or_create_user_by_email(
+        session,
+        body.email,
+        full_name=full_name,
+        role=role,
+    )
+    await record_login(session, user)
+
+    access_token, refresh_token = _build_token_pair(
+        user.id, user.email, user.roles, settings
+    )
+    await create_session(
+        session,
+        user_id=user.id,
+        refresh_token=refresh_token,
+        device_id=device_id,
+        device_info=device_info,
+        ip_address=ip_address,
+        expire_seconds=settings.jwt_refresh_expire_seconds,
+    )
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.jwt_expire_seconds,
+    )
+
+
+# ── Change password (authenticated) ─────────────────────────────────────────
+
+async def change_password(
+    session: AsyncSession,
+    body: ChangePasswordRequest,
+    user_id: uuid.UUID,
+) -> None:
+    """Verify the current password and update to the new one."""
+    await change_user_password(
+        session,
+        user_id=user_id,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )

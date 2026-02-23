@@ -18,10 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.rate_limit import limiter
 from app.auth.controller import (
+    change_password as change_password_controller,
+    email_otp_login as email_otp_login_controller,
     email_otp_request as email_otp_request_controller,
     email_otp_verify as email_otp_verify_controller,
     login as login_controller,
     logout as logout_controller,
+    oauth_google as oauth_google_controller,
+    oauth_microsoft as oauth_microsoft_controller,
     otp_request as otp_request_controller,
     otp_verify as otp_verify_controller,
     password_reset_confirm as password_reset_confirm_controller,
@@ -33,11 +37,14 @@ from app.auth.controller import (
     verify_email as verify_email_controller,
 )
 from app.auth.schemas import (
+    ChangePasswordRequest,
+    EmailOTPLoginRequest,
     EmailOTPRequestSchema,
     EmailOTPVerifyRequest,
     LoginRequest,
     LogoutRequest,
     MessageResponse,
+    OAuthCallbackRequest,
     OTPRequestSchema,
     OTPVerifyRequest,
     PasswordResetConfirmSchema,
@@ -344,3 +351,102 @@ async def email_otp_verify(
 ) -> MessageResponse:
     await email_otp_verify_controller(session, redis, body)
     return MessageResponse(message="Email verified successfully.")
+
+
+@router.post(
+    "/email-otp/login",
+    response_model=TokenResponse,
+    summary="Verify email OTP and authenticate (creates account on first use)",
+    description=(
+        "Verifies the 6-digit email OTP, finds or creates the user account, "
+        "and returns a JWT token pair. For first-time registration, "
+        "full_name and role are optional (defaults applied)."
+    ),
+)
+async def email_otp_login(
+    request: Request,
+    body: EmailOTPLoginRequest,
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
+    redis: aioredis.Redis = Depends(_get_redis),
+) -> TokenResponse:
+    return await email_otp_login_controller(
+        session,
+        body,
+        settings,
+        redis,
+        ip_address=_client_ip(request),
+    )
+
+
+# ── OAuth SSO ────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/oauth/google",
+    response_model=TokenResponse,
+    summary="Authenticate via Google OAuth (authorization code exchange)",
+    description=(
+        "Exchange a Google authorization code for user info, find-or-create "
+        "the user account, and return a JWT token pair. "
+        "If the email matches an existing account, the Google identity is linked to it."
+    ),
+)
+@limiter.limit("10/minute")
+async def oauth_google(
+    request: Request,
+    body: OAuthCallbackRequest,
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
+) -> TokenResponse:
+    return await oauth_google_controller(
+        session,
+        body,
+        settings,
+        ip_address=_client_ip(request),
+    )
+
+
+@router.post(
+    "/oauth/microsoft",
+    response_model=TokenResponse,
+    summary="Authenticate via Microsoft OAuth (authorization code exchange)",
+    description=(
+        "Exchange a Microsoft authorization code for user info, find-or-create "
+        "the user account, and return a JWT token pair. "
+        "If the email matches an existing account, the Microsoft identity is linked to it."
+    ),
+)
+@limiter.limit("10/minute")
+async def oauth_microsoft(
+    request: Request,
+    body: OAuthCallbackRequest,
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
+) -> TokenResponse:
+    return await oauth_microsoft_controller(
+        session,
+        body,
+        settings,
+        ip_address=_client_ip(request),
+    )
+
+
+# ── Change password (authenticated) ──────────────────────────────────────────
+
+@router.post(
+    "/change-password",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Change password (authenticated)",
+    description=(
+        "Verifies the current password and updates to the new one. "
+        "Requires a valid access token."
+    ),
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    await change_password_controller(session, body, current_user.id)
+    return MessageResponse(message="Password changed successfully.")
