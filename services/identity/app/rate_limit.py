@@ -15,4 +15,5 @@ from slowapi.util import get_remote_address
 limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    enabled=os.getenv("ENV_NAME") != "development",
 )

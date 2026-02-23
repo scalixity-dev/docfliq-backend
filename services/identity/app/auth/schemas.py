@@ -178,3 +178,18 @@ class PasswordResetLinkConfirmSchema(_Base):
 
     token: str = Field(description="URL-safe token from the reset link in the email")
     new_password: str = Field(min_length=8, max_length=128)
+
+
+# ── Email OTP (6-digit verification code sent via email) ─────────────────────
+
+class EmailOTPRequestSchema(_Base):
+    """Body for POST /auth/email-otp/request — sends a 6-digit code via email."""
+
+    email: EmailStr
+
+
+class EmailOTPVerifyRequest(_Base):
+    """Body for POST /auth/email-otp/verify — verifies the 6-digit email code."""
+
+    email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6, description="6-digit code sent to email")
