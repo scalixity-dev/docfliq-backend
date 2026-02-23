@@ -1,3 +1,5 @@
+import json
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,7 +10,19 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "change-me"
     env_name: str = "development"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        raw = self.cors_origins.strip()
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(o).strip() for o in parsed if str(o).strip()]
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return [x.strip() for x in raw.split(",") if x.strip()]
 
     # CloudFront URL signing
     cloudfront_domain: str = ""

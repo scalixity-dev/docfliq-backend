@@ -69,4 +69,11 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [x.strip() for x in self.cors_origins.split(",") if x.strip()]
+        import json
+        raw = self.cors_origins.strip()
+        if raw.startswith("["):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return [x.strip() for x in raw.split(",") if x.strip()]
