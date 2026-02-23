@@ -1,14 +1,28 @@
 import json
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _env_files() -> list[str]:
+    """Load .env from backend root (when running from services/content) then local .env."""
+    base = Path(__file__).resolve().parent.parent.parent.parent  # backend root
+    return [str(base / ".env"), ".env"]
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_env_files(),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     content_database_url: str = "postgresql+asyncpg://docfliq:changeme@localhost:5432/content_db"
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "docfliq-identity"
+    jwt_audience: str = "docfliq-services"
     env_name: str = "development"
     cors_origins: str = "http://localhost:3000"
 

@@ -27,7 +27,9 @@ async def get_current_user(
         payload = jwt.decode(
             credentials.credentials,
             settings.jwt_secret,
-            algorithms=["HS256"],
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
         )
         return UUID(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
@@ -58,7 +60,9 @@ async def get_optional_user(
         payload = jwt.decode(
             credentials.credentials,
             settings.jwt_secret,
-            algorithms=["HS256"],
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
         )
         return UUID(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):

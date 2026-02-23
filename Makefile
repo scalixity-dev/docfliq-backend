@@ -12,7 +12,7 @@ BIN = $(VENV)/bin
 SHARED = shared
 
 .PHONY: venv install install-shared install-dev setup-env test lint \
-	docker-up docker-down docker-clean migrate seed \
+	docker-up docker-down docker-clean migrate seed create-superadmin \
 	run-identity run-content run-course run-webinar run-payment run-platform \
 	clean
 
@@ -86,6 +86,10 @@ migrate:
 
 seed:
 	$(BIN)/python scripts/seed-data.py 2>/dev/null || $(PYTHON) scripts/seed-data.py
+
+## Create the initial super_admin account (reads ADMIN_EMAIL / ADMIN_PASSWORD from .env)
+create-superadmin:
+	PYTHONPATH=services/identity:shared $(BIN)/python scripts/create_superadmin.py
 
 run-identity:
 	$(BIN)/uvicorn app.main:app --reload --app-dir services/identity --host 0.0.0.0 --port 8001

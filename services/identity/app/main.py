@@ -10,6 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import Settings
 from app.database import init_db
 from app.rate_limit import limiter
+from app.admin.router import router as admin_user_router
 from app.auth.router import router as auth_router
 from app.profile.router import router as profile_router
 from app.verification.router import router as verification_router
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
     app.include_router(verification_admin_router, prefix="/api/v1")
     app.include_router(social_router, prefix="/api/v1")
     app.include_router(social_admin_router, prefix="/api/v1")
+    app.include_router(admin_user_router, prefix="/api/v1")
 
     @app.get("/health", response_model=HealthResponse, tags=["health"], include_in_schema=True)
     async def health() -> HealthResponse:

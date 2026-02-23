@@ -342,19 +342,26 @@ async def get_suggestions(
 ) -> list[User]:
     """
     Return up to `size` users that the current user does NOT follow,
-    has NOT blocked, and is NOT blocked by.  Excludes self.
+    has NOT blocked, and is NOT blocked by.  Excludes self and admin accounts.
     Ordered by newest accounts first.
     """
+    from app.auth.constants import UserRole
+
     # Sub-queries for exclusion
     following_ids = sa.select(Follow.following_id).where(Follow.follower_id == user_id)
     blocked_ids = sa.select(Block.blocked_id).where(Block.blocker_id == user_id)
     blocked_by_ids = sa.select(Block.blocker_id).where(Block.blocked_id == user_id)
+
+    # Exclude admin accounts from suggestions — they are not regular platform users.
+    admin_roles = sa.literal_column("ARRAY['admin','super_admin']::varchar[]")
 
     stmt = (
         sa.select(User)
         .where(
             User.id != user_id,
             User.is_active == True,  # noqa: E712
+            User.role != UserRole.ADMIN,
+            ~User.roles.overlap(admin_roles),
             User.id.notin_(following_ids),
             User.id.notin_(blocked_ids),
             User.id.notin_(blocked_by_ids),
