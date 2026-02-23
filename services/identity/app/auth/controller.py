@@ -467,7 +467,7 @@ async def otp_verify(
             )
 
     full_name = body.full_name or "Unknown"
-    role = body.role or UserRole.STUDENT
+    role = body.role or UserRole.NON_PHYSICIAN
 
     user, _ = await find_or_create_user_by_phone(
         session,
@@ -666,7 +666,7 @@ async def email_otp_login(
     await verify_email_otp_from_redis(redis, body.email, body.otp_code)
 
     full_name = body.full_name or "Unknown"
-    role = body.role or UserRole.STUDENT
+    role = body.role or UserRole.NON_PHYSICIAN
 
     user, _ = await find_or_create_user_by_email(
         session,

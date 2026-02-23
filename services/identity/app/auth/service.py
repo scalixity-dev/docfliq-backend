@@ -708,7 +708,7 @@ async def find_or_create_oauth_user(
     kwargs: dict = {
         "email": email,
         "full_name": full_name,
-        "role": UserRole.STUDENT,  # default for OAuth users; profile setup changes later
+        "role": UserRole.NON_PHYSICIAN,  # default for OAuth users; profile setup changes later
         "roles": [Role.USER.value],
         "email_verified": email_verified,
         "profile_image_url": picture_url,

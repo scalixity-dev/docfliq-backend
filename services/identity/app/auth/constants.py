@@ -13,11 +13,9 @@ MAX_SESSIONS_PER_USER: int = 5
 
 # ── User professional role (selected during signup) ───────────────────────────
 class UserRole(str, enum.Enum):
-    DOCTOR_SPECIALIST = "doctor_specialist"
-    DOCTOR_GP = "doctor_gp"
-    NURSE = "nurse"
-    STUDENT = "student"
-    PHARMACIST = "pharmacist"
+    PHYSICIAN = "physician"
+    ASSOCIATION = "association"
+    NON_PHYSICIAN = "non_physician"
     ADMIN = "admin"
 
 

@@ -18,11 +18,9 @@ class _Base(BaseModel):
 # ── Role-specific required fields (used for profile_complete computation) ──────
 
 _REQUIRED_FIELDS: dict[UserRole, list[str]] = {
-    UserRole.DOCTOR_SPECIALIST: ["specialty", "hospital_name", "medical_license_number"],
-    UserRole.DOCTOR_GP: ["specialty", "hospital_name", "medical_license_number"],
-    UserRole.NURSE: ["specialty", "hospital_name", "certification"],
-    UserRole.STUDENT: ["university", "graduation_year", "student_id"],
-    UserRole.PHARMACIST: ["pharmacist_license_number", "pharmacy_name"],
+    UserRole.PHYSICIAN: ["specialty"],
+    UserRole.ASSOCIATION: [],
+    UserRole.NON_PHYSICIAN: [],
     UserRole.ADMIN: [],
 }
 
@@ -45,16 +43,14 @@ class UpdateProfileRequest(_Base):
     purposes: list[str] | None = None
     event_schedule: list[str] | None = None
     languages: list[str] | None = None
-    # Doctor (Specialist / GP) + Nurse
+    # Physician-specific
     medical_license_number: str | None = Field(None, max_length=100)
     hospital_name: str | None = Field(None, max_length=200)
-    # Nurse
+    # Legacy fields (kept for backwards compatibility)
     certification: str | None = Field(None, max_length=200)
-    # Student
     university: str | None = Field(None, max_length=200)
     graduation_year: int | None = Field(None, ge=1980, le=2060)
     student_id: str | None = Field(None, max_length=100)
-    # Pharmacist
     pharmacist_license_number: str | None = Field(None, max_length=100)
     pharmacy_name: str | None = Field(None, max_length=200)
     # Phone number (E.164 format, e.g. "+919876543210")
@@ -75,19 +71,19 @@ class CapabilitiesResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     can_create_courses: bool
-    """Doctor Specialist only, after verification."""
+    """Physician only, after verification."""
 
     can_be_speaker: bool
-    """Doctor Specialist and Doctor GP only, after verification."""
+    """Physician only, after verification."""
 
     can_post_community: bool
-    """All verified non-student roles (Doctor, Nurse, Pharmacist)."""
+    """Physician only, after verification."""
 
     has_full_content_access: bool
-    """True for all verified non-student roles. Students always False."""
+    """True for verified Physicians."""
 
-    student_restricted: bool
-    """True only for Student role — free courses + public content only."""
+    consumer_only: bool
+    """True for NON_PHYSICIAN role — can consume content but not create it."""
 
 
 class ProfileResponse(BaseModel):
@@ -113,16 +109,14 @@ class ProfileResponse(BaseModel):
     verification_status: VerificationStatus
     content_creation_mode: bool
     email_verified: bool
-    # Doctor (Specialist / GP) + Nurse
+    # Physician-specific
     medical_license_number: str | None
     hospital_name: str | None
-    # Nurse
+    # Legacy fields (kept for backwards compatibility)
     certification: str | None
-    # Student
     university: str | None
     graduation_year: int | None
     student_id: str | None
-    # Pharmacist
     pharmacist_license_number: str | None
     pharmacy_name: str | None
     # Notification preferences
@@ -134,21 +128,13 @@ class ProfileResponse(BaseModel):
     def capabilities(self) -> CapabilitiesResponse:
         """Compute role-based capabilities from current role + verification status."""
         is_verified = self.verification_status == VerificationStatus.VERIFIED
-        role = self.role
+        is_physician_verified = is_verified and self.role == UserRole.PHYSICIAN
         return CapabilitiesResponse(
-            can_create_courses=is_verified and role == UserRole.DOCTOR_SPECIALIST,
-            can_be_speaker=is_verified and role in {
-                UserRole.DOCTOR_SPECIALIST,
-                UserRole.DOCTOR_GP,
-            },
-            can_post_community=is_verified and role in {
-                UserRole.DOCTOR_SPECIALIST,
-                UserRole.DOCTOR_GP,
-                UserRole.NURSE,
-                UserRole.PHARMACIST,
-            },
-            has_full_content_access=is_verified and role != UserRole.STUDENT,
-            student_restricted=role == UserRole.STUDENT,
+            can_create_courses=is_physician_verified,
+            can_be_speaker=is_physician_verified,
+            can_post_community=is_physician_verified,
+            has_full_content_access=is_physician_verified,
+            consumer_only=self.role == UserRole.NON_PHYSICIAN,
         )
 
     @computed_field  # type: ignore[misc]

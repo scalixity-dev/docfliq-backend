@@ -43,16 +43,14 @@ class RegisterRequest(_Base):
     specialty: str | None = Field(default=None, max_length=100)
     sub_specialty: str | None = Field(default=None, max_length=100)
     years_of_experience: int | None = Field(default=None, ge=0, le=80)
-    # Doctor (Specialist / GP) + Nurse
+    # Physician-specific
     medical_license_number: str | None = Field(default=None, max_length=100)
     hospital_name: str | None = Field(default=None, max_length=200)
-    # Nurse
+    # Legacy fields (kept for backwards compatibility)
     certification: str | None = Field(default=None, max_length=200)
-    # Student
     university: str | None = Field(default=None, max_length=200)
     graduation_year: int | None = Field(default=None, ge=1980, le=2060)
     student_id: str | None = Field(default=None, max_length=100)
-    # Pharmacist
     pharmacist_license_number: str | None = Field(default=None, max_length=100)
     pharmacy_name: str | None = Field(default=None, max_length=200)
 

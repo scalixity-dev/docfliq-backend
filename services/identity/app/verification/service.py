@@ -109,12 +109,9 @@ async def get_pending_queue(
     """Return (docs, total) for PENDING verifications ordered by role priority then FIFO.
 
     Priority order (lower number = reviewed first):
-      1 → Doctor Specialist
-      2 → Doctor GP
-      3 → Nurse
-      4 → Pharmacist
-      5 → Student
-      6 → everything else (Admin, unknown)
+      1 → Physician
+      2 → Association
+      3 → everything else (Non-Physician, Admin, unknown)
 
     Within the same priority group, documents are ordered oldest-first (FIFO).
     """
@@ -126,12 +123,9 @@ async def get_pending_queue(
     total = total_r.scalar_one()
 
     role_priority = sa.case(
-        (User.role == UserRole.DOCTOR_SPECIALIST, 1),
-        (User.role == UserRole.DOCTOR_GP, 2),
-        (User.role == UserRole.NURSE, 3),
-        (User.role == UserRole.PHARMACIST, 4),
-        (User.role == UserRole.STUDENT, 5),
-        else_=6,
+        (User.role == UserRole.PHYSICIAN, 1),
+        (User.role == UserRole.ASSOCIATION, 2),
+        else_=3,
     )
 
     docs_r = await session.execute(
