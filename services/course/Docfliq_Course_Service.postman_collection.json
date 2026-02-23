@@ -1,0 +1,1094 @@
+{
+	"info": {
+		"_postman_id": "docfliq-course-service-v1",
+		"name": "Docfliq Course & LMS Service",
+		"description": "Complete API collection for Docfliq Course microservice — LMS, Assessment, Player, and Certificates.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "course_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "module_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "lesson_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "enrollment_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "quiz_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "certificate_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "slug",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "qr_code",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Health check endpoint. Returns service status."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "LMS — Courses",
+			"item": [
+				{
+					"name": "Create Course",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('course_id', id);",
+									"        console.log('course_id set to', id);",
+									"    }",
+									"    var slug = json.data ? json.data.slug : json.slug;",
+									"    if (slug) {",
+									"        pm.collectionVariables.set('slug', slug);",
+									"        console.log('slug set to', slug);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Introduction to Cardiology\",\n  \"description\": \"A comprehensive course covering fundamentals of cardiology for medical professionals.\",\n  \"instructor_name\": \"Dr. Anil Sharma\",\n  \"instructor_bio\": \"Senior Cardiologist with 20+ years of experience.\",\n  \"category\": \"Featured\",\n  \"specialty_tags\": [\"cardiology\", \"heart-disease\"],\n  \"pricing_type\": \"FREE\",\n  \"visibility\": \"PUBLIC\",\n  \"thumbnail_url\": \"https://cdn.example.com/thumbnails/cardio-101.jpg\",\n  \"syllabus\": \"## Module 1\\nIntroduction to the Heart\\n\\n## Module 2\\nCommon Cardiac Conditions\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses"]
+						},
+						"description": "Create a new course. Defaults to DRAFT status. Auto-generates slug if omitted."
+					},
+					"response": []
+				},
+				{
+					"name": "List Courses",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses?limit=20&offset=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses"],
+							"query": [
+								{ "key": "status", "value": "PUBLISHED", "disabled": true },
+								{ "key": "category", "value": "", "disabled": true },
+								{ "key": "specialty_tag", "value": "", "disabled": true },
+								{ "key": "pricing_type", "value": "FREE", "disabled": true },
+								{ "key": "search", "value": "", "disabled": true },
+								{ "key": "limit", "value": "20" },
+								{ "key": "offset", "value": "0" }
+							]
+						},
+						"description": "Public course catalog with optional filters. Enable query params as needed."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Course by ID",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}"]
+						},
+						"description": "Get course by its UUID."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Course by Slug",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/slug/{{slug}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "slug", "{{slug}}"]
+						},
+						"description": "Get course by its SEO-friendly slug."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Course Detail (with Modules & Lessons)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/detail",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "detail"]
+						},
+						"description": "Returns full course structure including all modules and their lessons, ordered by sort_order."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Course",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Advanced Cardiology\",\n  \"description\": \"Updated description for the advanced module.\",\n  \"specialty_tags\": [\"cardiology\", \"advanced\", \"ECG\"]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}"]
+						},
+						"description": "Update course fields. Only the course instructor can update. All fields are optional."
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Course",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/publish",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "publish"]
+						},
+						"description": "Transition a DRAFT course to PUBLISHED. Only the course instructor can publish."
+					},
+					"response": []
+				},
+				{
+					"name": "Archive Course",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/archive",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "archive"]
+						},
+						"description": "Archives a course. Enrolled users retain access but it is removed from the catalog."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "LMS — Modules",
+			"item": [
+				{
+					"name": "Create Module",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('module_id', id);",
+									"        console.log('module_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Module 1 — Anatomy of the Heart\",\n  \"sort_order\": 0\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/modules",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "modules"]
+						},
+						"description": "Add a module to a course."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Module",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Module 1 — Heart Anatomy (Updated)\",\n  \"sort_order\": 0\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}"]
+						},
+						"description": "Update a module. All fields optional."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Module",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}"]
+						},
+						"description": "Delete a module from the course."
+					},
+					"response": []
+				},
+				{
+					"name": "Reorder Modules",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"module_ids\": [\n    \"{{module_id}}\"\n  ]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/modules/reorder",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "modules", "reorder"]
+						},
+						"description": "Reorder modules by providing an ordered array of module_ids."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "LMS — Lessons",
+			"item": [
+				{
+					"name": "Create Lesson (VIDEO)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('lesson_id', id);",
+									"        console.log('lesson_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Lesson 1 — Introduction to Cardiac Anatomy\",\n  \"lesson_type\": \"VIDEO\",\n  \"content_url\": \"https://cdn.example.com/videos/cardiac-anatomy.mp4\",\n  \"duration_mins\": 25,\n  \"sort_order\": 0,\n  \"is_preview\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}/lessons",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}", "lessons"]
+						},
+						"description": "Add a VIDEO lesson to a module."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Lesson (TEXT)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('lesson_id', id);",
+									"        console.log('lesson_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Lesson 2 — Reading Material\",\n  \"lesson_type\": \"TEXT\",\n  \"content_body\": \"<h2>Heart Chambers</h2><p>The heart has four chambers: two atria and two ventricles...</p>\",\n  \"sort_order\": 1,\n  \"is_preview\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}/lessons",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}", "lessons"]
+						},
+						"description": "Add a TEXT lesson to a module."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Lesson (PDF)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('lesson_id', id);",
+									"        console.log('lesson_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Lesson 3 — ECG Interpretation Guide\",\n  \"lesson_type\": \"PDF\",\n  \"content_url\": \"https://cdn.example.com/docs/ecg-guide.pdf\",\n  \"duration_mins\": 15,\n  \"sort_order\": 2,\n  \"is_preview\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}/lessons",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}", "lessons"]
+						},
+						"description": "Add a PDF lesson to a module."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Lesson (QUIZ)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('lesson_id', id);",
+									"        console.log('lesson_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Quiz — Cardiac Anatomy\",\n  \"lesson_type\": \"QUIZ\",\n  \"sort_order\": 3,\n  \"is_preview\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/modules/{{module_id}}/lessons",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "modules", "{{module_id}}", "lessons"]
+						},
+						"description": "Add a QUIZ lesson to a module. Attach questions via Assessment endpoints."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Lesson",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Lesson 1 — Cardiac Anatomy (Updated)\",\n  \"duration_mins\": 30,\n  \"is_preview\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/lessons/{{lesson_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "lessons", "{{lesson_id}}"]
+						},
+						"description": "Update a lesson. All fields optional."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Lesson",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/lessons/{{lesson_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "lessons", "{{lesson_id}}"]
+						},
+						"description": "Delete a lesson."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "LMS — Enrollment",
+			"item": [
+				{
+					"name": "Enroll in Free Course",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('enrollment_id', id);",
+									"        console.log('enrollment_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/enroll",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "enroll"]
+						},
+						"description": "Enroll in a FREE course. Returns 402 if the course requires payment."
+					},
+					"response": []
+				},
+				{
+					"name": "Enroll in Paid Course",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('enrollment_id', id);",
+									"        console.log('enrollment_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"payment_id\": \"00000000-0000-0000-0000-000000000000\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/enroll/paid",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "enroll", "paid"]
+						},
+						"description": "Enroll in a PAID course after payment. Provide the payment_id from the Payment Service."
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Enrollments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/enrollments/me?limit=20&offset=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "enrollments", "me"],
+							"query": [
+								{ "key": "status", "value": "IN_PROGRESS", "disabled": true },
+								{ "key": "limit", "value": "20" },
+								{ "key": "offset", "value": "0" }
+							]
+						},
+						"description": "List all of my enrollments with optional status filter."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Enrollment Detail",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/enrollments/{{enrollment_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "enrollments", "{{enrollment_id}}"]
+						},
+						"description": "Get enrollment detail with per-lesson progress breakdown."
+					},
+					"response": []
+				},
+				{
+					"name": "Drop Course",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/enrollments/{{enrollment_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "enrollments", "{{enrollment_id}}"]
+						},
+						"description": "Sets enrollment status to DROPPED. The user can re-enroll later."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "LMS — Progress",
+			"item": [
+				{
+					"name": "Update Lesson Progress",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"watch_duration_secs\": 300,\n  \"completed\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/lessons/{{lesson_id}}/progress",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "lessons", "{{lesson_id}}", "progress"]
+						},
+						"description": "Track video watch position or mark a lesson completed. Recalculates enrollment progress_pct."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Video Resume Position",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"last_lesson_id\": \"{{lesson_id}}\",\n  \"last_position_secs\": 120\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/enrollments/{{enrollment_id}}/resume",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "enrollments", "{{enrollment_id}}", "resume"]
+						},
+						"description": "Save last lesson and timestamp for resume capability."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Course Progress",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/lms/courses/{{course_id}}/progress",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "lms", "courses", "{{course_id}}", "progress"]
+						},
+						"description": "Returns enrollment and all per-lesson progress for the authenticated user."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Assessment — Quiz Management",
+			"item": [
+				{
+					"name": "Create Quiz",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('quiz_id', id);",
+									"        console.log('quiz_id set to', id);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questions\": [\n    {\n      \"question_type\": \"MCQ\",\n      \"question\": \"How many chambers does the human heart have?\",\n      \"options\": [\n        { \"text\": \"2\" },\n        { \"text\": \"3\" },\n        { \"text\": \"4\" },\n        { \"text\": \"5\" }\n      ],\n      \"correct_index\": 2,\n      \"explanation\": \"The human heart has four chambers: left atrium, right atrium, left ventricle, and right ventricle.\"\n    },\n    {\n      \"question_type\": \"MSQ\",\n      \"question\": \"Which of the following are heart valves?\",\n      \"options\": [\n        { \"text\": \"Mitral valve\" },\n        { \"text\": \"Pyloric valve\" },\n        { \"text\": \"Aortic valve\" },\n        { \"text\": \"Tricuspid valve\" }\n      ],\n      \"correct_indices\": [0, 2, 3],\n      \"explanation\": \"Mitral, Aortic, and Tricuspid are heart valves. Pyloric valve is in the stomach.\"\n    }\n  ],\n  \"passing_score\": 70,\n  \"max_attempts\": 3,\n  \"time_limit_secs\": 300,\n  \"randomize_order\": true,\n  \"show_answers\": \"AFTER_PASS\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/lessons/{{lesson_id}}/quiz",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "lessons", "{{lesson_id}}", "quiz"]
+						},
+						"description": "Attach an MCQ/MSQ quiz to a lesson. One quiz per lesson."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Quiz (Student View)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/lessons/{{lesson_id}}/quiz",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "lessons", "{{lesson_id}}", "quiz"]
+						},
+						"description": "Returns quiz questions WITHOUT correct answers. For student-facing UI."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Quiz (Instructor View)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}"]
+						},
+						"description": "Returns full quiz including correct answers and explanations. For instructor review."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Quiz",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"passing_score\": 80,\n  \"max_attempts\": 5,\n  \"show_answers\": \"AFTER_SUBMIT\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}"]
+						},
+						"description": "Update quiz settings or questions. All fields optional."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Quiz",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}"]
+						},
+						"description": "Delete a quiz."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Assessment — Quiz Attempts",
+			"item": [
+				{
+					"name": "Start Quiz",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}/start",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}", "start"]
+						},
+						"description": "Start a quiz attempt. Starts the countdown timer if timed. Returns questions without answers."
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Quiz Attempt",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"answers\": [2, [0, 2, 3]],\n  \"time_taken_secs\": 180\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}/attempt",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}", "attempt"]
+						},
+						"description": "Submit quiz answers. Use int for MCQ, list[int] for MSQ. Returns score and pass/fail."
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Attempts",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/assessment/quizzes/{{quiz_id}}/attempts",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "assessment", "quizzes", "{{quiz_id}}", "attempts"]
+						},
+						"description": "Returns the user's attempts with per-attempt details, best score, and pass status."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Player",
+			"item": [
+				{
+					"name": "Get Lesson Content (Signed URLs)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/player/lessons/{{lesson_id}}/content",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "player", "lessons", "{{lesson_id}}", "content"]
+						},
+						"description": "Returns lesson content with CloudFront signed URLs. VIDEO: HLS manifest + cookies. PDF: signed download URL. SCORM: launch URL + session ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Video Heartbeat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"position_secs\": 120,\n  \"watched_intervals\": [[0, 120]],\n  \"playback_rate\": 1.0\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/player/lessons/{{lesson_id}}/heartbeat",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "player", "lessons", "{{lesson_id}}", "heartbeat"]
+						},
+						"description": "Send every ~10s during video playback. Tracks watch position and intervals for anti-cheat progress."
+					},
+					"response": []
+				},
+				{
+					"name": "Document Heartbeat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"current_page\": 3,\n  \"pages_viewed\": [1, 2, 3]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/player/lessons/{{lesson_id}}/heartbeat/document",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "player", "lessons", "{{lesson_id}}", "heartbeat", "document"]
+						},
+						"description": "Send on PDF/document scroll events. Tracks pages viewed vs total pages."
+					},
+					"response": []
+				},
+				{
+					"name": "SCORM Commit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tracking_data\": {\n    \"cmi.core.lesson_status\": \"incomplete\",\n    \"cmi.core.score.raw\": \"85\",\n    \"cmi.suspend_data\": \"bookmark=page3\"\n  },\n  \"score_raw\": 85,\n  \"score_max\": 100,\n  \"score_min\": 0,\n  \"completion_status\": \"incomplete\",\n  \"success_status\": \"unknown\",\n  \"total_time_secs\": 600\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/player/scorm/sessions/{{session_id}}/commit",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "player", "scorm", "sessions", "{{session_id}}", "commit"]
+						},
+						"description": "SCORM runtime API data commit. Posts cmi.* tracking data. Supports SCORM 1.2 and 2004."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Detailed Course Progress",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/player/courses/{{course_id}}/progress/detail",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "player", "courses", "{{course_id}}", "progress", "detail"]
+						},
+						"description": "Returns weighted progress at course, module, and lesson level. Includes watched_pct, pages_pct, quiz scores, SCORM status."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Certificates",
+			"item": [
+				{
+					"name": "Generate Certificate",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    var id = json.data ? json.data.id : json.id;",
+									"    if (id) {",
+									"        pm.collectionVariables.set('certificate_id', id);",
+									"        console.log('certificate_id set to', id);",
+									"    }",
+									"    var qr = json.data ? json.data.qr_code : json.qr_code;",
+									"    if (qr) {",
+									"        pm.collectionVariables.set('qr_code', qr);",
+									"        console.log('qr_code set to', qr);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"recipient_name\": \"Dr. Priya Patel\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/certificates/enrollments/{{enrollment_id}}/generate",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "certificates", "enrollments", "{{enrollment_id}}", "generate"]
+						},
+						"description": "Generates a branded PDF certificate with QR verification. Requires enrollment status = COMPLETED. Returns 409 if already issued."
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Certificates",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/certificates/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "certificates", "me"]
+						},
+						"description": "Returns all certificates earned by the authenticated user, newest first."
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Certificate (Public)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/certificates/verify/{{qr_code}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "certificates", "verify", "{{qr_code}}"]
+						},
+						"description": "Public endpoint. Verifies certificate by QR code. Returns validity, recipient, course, and issue details."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Certificate by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/certificates/{{certificate_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "certificates", "{{certificate_id}}"]
+						},
+						"description": "Get certificate details by its ID."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
