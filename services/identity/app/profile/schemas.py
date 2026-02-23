@@ -42,6 +42,9 @@ class UpdateProfileRequest(_Base):
     location_country: str | None = Field(None, max_length=50)
     bio: str | None = None
     interests: list[str] | None = None
+    purposes: list[str] | None = None
+    event_schedule: list[str] | None = None
+    languages: list[str] | None = None
     # Doctor (Specialist / GP) + Nurse
     medical_license_number: str | None = Field(None, max_length=100)
     hospital_name: str | None = Field(None, max_length=200)
@@ -99,6 +102,9 @@ class ProfileResponse(BaseModel):
     profile_image_url: str | None
     bio: str | None
     interests: list[str] | None
+    purposes: list[str] | None
+    event_schedule: list[str] | None
+    languages: list[str] | None
     verification_status: VerificationStatus
     content_creation_mode: bool
     email_verified: bool

@@ -182,6 +182,15 @@ class PasswordResetLinkConfirmSchema(_Base):
 
 # ── Email OTP (6-digit verification code sent via email) ─────────────────────
 
+# ── OAuth SSO ─────────────────────────────────────────────────────────────────
+
+class OAuthCallbackRequest(_Base):
+    """Body for POST /auth/oauth/google and /auth/oauth/microsoft."""
+
+    code: str = Field(description="Authorization code from the OAuth provider")
+    redirect_uri: str = Field(description="The redirect_uri used in the authorize request (must match exactly)")
+
+
 class EmailOTPRequestSchema(_Base):
     """Body for POST /auth/email-otp/request — sends a 6-digit code via email."""
 
@@ -193,3 +202,24 @@ class EmailOTPVerifyRequest(_Base):
 
     email: EmailStr
     otp_code: str = Field(min_length=6, max_length=6, description="6-digit code sent to email")
+
+
+class EmailOTPLoginRequest(_Base):
+    """
+    Body for POST /auth/email-otp/login — verify OTP and login/register via email.
+
+    Mirrors OTPVerifyRequest but for email-based OTP.
+    For first-time registration, full_name and role are optional.
+    """
+
+    email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6)
+    full_name: str | None = Field(default=None, min_length=2, max_length=150)
+    role: UserRole | None = None
+
+
+class ChangePasswordRequest(_Base):
+    """Body for POST /auth/change-password (authenticated)."""
+
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
