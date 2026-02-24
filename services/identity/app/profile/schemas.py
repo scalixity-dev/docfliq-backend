@@ -93,6 +93,7 @@ class ProfileResponse(BaseModel):
     email: str
     phone_number: str | None
     full_name: str
+    username: str | None
     role: UserRole
     specialty: str | None
     sub_specialty: str | None
