@@ -109,6 +109,40 @@ async def register(
 
 
 @router.post(
+    "/check-user",
+    response_model=dict,
+    summary="Check if user exists by email or phone",
+)
+@limiter.limit("10/minute")
+async def check_user(
+    request: Request,
+    body: dict,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Check if a user already exists by email or phone number.
+    Returns {email_exists: bool, phone_exists: bool}
+    """
+    from app.auth.service import get_user_by_email, get_user_by_phone
+    
+    email = body.get("email", "").lower().strip()
+    phone_number = body.get("phone_number", "").strip()
+    
+    email_exists = False
+    phone_exists = False
+    
+    if email:
+        user = await get_user_by_email(session, email)
+        email_exists = user is not None
+    
+    if phone_number:
+        user = await get_user_by_phone(session, phone_number)
+        phone_exists = user is not None
+    
+    return {"email_exists": email_exists, "phone_exists": phone_exists}
+
+
+@router.post(
     "/login",
     response_model=TokenResponse,
     summary="Login with email + password",
