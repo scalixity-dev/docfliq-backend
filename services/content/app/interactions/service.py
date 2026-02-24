@@ -35,7 +35,6 @@ from app.interactions.exceptions import (
     AlreadyBookmarkedError,
     AlreadyLikedError,
     CommentAccessDeniedError,
-    CommentDepthExceededError,
     CommentNotFoundError,
     CommentRateLimitError,
     NotBookmarkedError,
@@ -152,10 +151,9 @@ async def list_comments(
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[Comment], int]:
-    """Return active top-level comments for a post (parent_comment_id IS NULL)."""
+    """Return active comments for a post (top-level + nested) ordered by creation time."""
     base = select(Comment).where(
         Comment.post_id == post_id,
-        Comment.parent_comment_id.is_(None),
         Comment.status == CommentStatus.ACTIVE,
     )
     total_result = await db.execute(select(func.count()).select_from(base.subquery()))
@@ -176,7 +174,6 @@ async def create_comment(
     """Create a comment or reply.
 
     Enforces:
-    - Max depth 2 (no replies to replies)
     - Rate limit: 5 comments/minute per user (Redis-backed)
     - Max 2,000 chars (Pydantic schema)
     """
@@ -189,11 +186,11 @@ async def create_comment(
         if count > _COMMENT_RATE_LIMIT:
             raise CommentRateLimitError()
 
-    # Validate parent comment depth
+    # Validate parent comment belongs to the same post and is active.
     if payload.parent_comment_id is not None:
         parent = await get_comment_by_id(payload.parent_comment_id, db)
-        if parent.parent_comment_id is not None:
-            raise CommentDepthExceededError()
+        if parent.post_id != post_id or parent.status != CommentStatus.ACTIVE:
+            raise CommentNotFoundError(payload.parent_comment_id)
 
     comment = Comment(
         post_id=post_id,

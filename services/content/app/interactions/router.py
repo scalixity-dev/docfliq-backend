@@ -113,9 +113,9 @@ async def unlike_comment(
 @router.get(
     "/posts/{post_id}/comments",
     response_model=CommentListResponse,
-    summary="List top-level comments on a post",
+    summary="List comments on a post (threaded)",
     description=(
-        "Returns active top-level comments (no replies) ordered by creation time. "
+        "Returns active comments (top-level + nested replies) ordered by creation time. "
         "Auth is optional — unauthenticated requests see all public comments."
     ),
 )
@@ -135,8 +135,8 @@ async def list_comments(
     status_code=status.HTTP_201_CREATED,
     summary="Add a comment to a post",
     description=(
-        "Create a top-level comment or a reply (set `parent_comment_id`). "
-        "Max depth: 2 (replies to replies are rejected). "
+        "Create a top-level comment or a nested reply (set `parent_comment_id`). "
+        "Mentions are supported in comment text using @username syntax. "
         "Max length: 2,000 chars. "
         "Rate limit: 5 comments per minute per user."
     ),

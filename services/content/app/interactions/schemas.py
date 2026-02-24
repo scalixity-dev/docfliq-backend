@@ -5,10 +5,11 @@ All fields carry Field(description=...) for full OpenAPI documentation.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import CommentStatus, ContentType, LikeTargetType, PostStatus, PostVisibility, ReportStatus, ReportTargetType, SharePlatform
 
@@ -57,7 +58,7 @@ class CreateCommentRequest(BaseModel):
         default=None,
         description=(
             "ID of the parent comment for replies. "
-            "Max depth is 2 — replies to replies are rejected."
+            "Nested replies are allowed at any depth."
         ),
     )
 
@@ -80,13 +81,32 @@ class CommentResponse(BaseModel):
         default=None, description="Set for replies; null for top-level comments."
     )
     body: str
+    mentioned_usernames: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Usernames tagged in the body using @username syntax. "
+            "Extracted server-side, unique and ordered by first appearance."
+        ),
+    )
     like_count: int
     status: CommentStatus
     created_at: datetime
 
+    @model_validator(mode="after")
+    def populate_mentions(self) -> "CommentResponse":
+        seen: set[str] = set()
+        mentions: list[str] = []
+        for username in re.findall(r"(?<!\w)@([a-zA-Z0-9_]{1,30})", self.body):
+            normalized = username.lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                mentions.append(normalized)
+        self.mentioned_usernames = mentions
+        return self
+
 
 class CommentListResponse(BaseModel):
-    """Offset-paginated list of top-level comments."""
+    """Offset-paginated list of active comments (top-level and nested)."""
 
     items: list[CommentResponse]
     total: int

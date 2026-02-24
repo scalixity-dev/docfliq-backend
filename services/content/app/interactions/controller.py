@@ -11,7 +11,6 @@ from app.interactions.exceptions import (
     AlreadyBookmarkedError,
     AlreadyLikedError,
     CommentAccessDeniedError,
-    CommentDepthExceededError,
     CommentNotFoundError,
     CommentRateLimitError,
     NotBookmarkedError,
@@ -115,11 +114,6 @@ async def create_comment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Parent comment not found.",
-        )
-    except CommentDepthExceededError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Cannot reply to a reply — max comment depth is 2.",
         )
     except CommentRateLimitError:
         raise HTTPException(
