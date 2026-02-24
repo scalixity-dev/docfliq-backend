@@ -54,6 +54,7 @@ from app.auth.schemas import (
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
+    DeleteUserRequest,
 )
 from app.auth.dependencies import get_current_user
 from app.config import Settings
@@ -484,3 +485,86 @@ async def change_password(
 ) -> MessageResponse:
     await change_password_controller(session, body, current_user.id)
     return MessageResponse(message="Password changed successfully.")
+
+
+# ── Debug / Admin Utility ─────────────────────────────────────────────────────
+
+@router.post(
+    "/delete-user",
+    response_model=MessageResponse,
+    summary="[DEBUG/ADMIN] Delete a user entirely by email or phone",
+)
+async def delete_user_route(
+    body: DeleteUserRequest,
+    session: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    from app.auth.service import get_user_by_email, get_user_by_phone
+    from app.auth.models import AuthSession, OTPRequest, PasswordResetToken
+    from fastapi import HTTPException
+    from sqlalchemy import delete
+
+    if not body.email and not body.phone_number:
+        raise HTTPException(status_code=400, detail="Must provide email or phone_number")
+
+    user = None
+    if body.email:
+        user = await get_user_by_email(session, body.email)
+    elif body.phone_number:
+        user = await get_user_by_phone(session, body.phone_number)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Cascade delete all related data manually to ensure complete removal
+    user_id = user.id
+    
+    # Delete auth sessions
+    await session.execute(
+        delete(AuthSession).where(AuthSession.user_id == user_id)
+    )
+    
+    # Delete social graph relationships (follows, blocks, mutes where user is either party)
+    from app.social_graph.models import Follow, Block, Mute
+    await session.execute(
+        delete(Follow).where((Follow.follower_id == user_id) | (Follow.following_id == user_id))
+    )
+    await session.execute(
+        delete(Block).where((Block.blocker_id == user_id) | (Block.blocked_id == user_id))
+    )
+    await session.execute(
+        delete(Mute).where((Mute.muter_id == user_id) | (Mute.muted_id == user_id))
+    )
+    
+    # Delete reports made by user
+    from app.social_graph.models import Report
+    await session.execute(
+        delete(Report).where(Report.reporter_id == user_id)
+    )
+    
+    # Delete verification documents
+    from app.verification.models import UserVerification
+    await session.execute(
+        delete(UserVerification).where(UserVerification.user_id == user_id)
+    )
+    
+    # Delete OTP requests (only if user has a phone number)
+    if user.phone_number:
+        await session.execute(
+            delete(OTPRequest).where(OTPRequest.phone_number == user.phone_number)
+        )
+    
+    # Delete password reset tokens (only if user has an email)
+    if user.email:
+        await session.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.email == user.email)
+        )
+    
+    # Finally delete the user
+    await session.delete(user)
+    await session.commit()
+    
+    identifier = body.email or body.phone_number
+    return MessageResponse(
+        message=f"User {identifier} and all associated data completely deleted. "
+        "Note: Content in other services (media, content) may require separate cleanup."
+    )

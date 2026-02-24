@@ -221,3 +221,10 @@ class ChangePasswordRequest(_Base):
 
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class DeleteUserRequest(_Base):
+    """Body for POST /auth/delete-user."""
+
+    email: EmailStr | None = None
+    phone_number: str | None = Field(None, max_length=20)
