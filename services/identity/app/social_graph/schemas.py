@@ -26,6 +26,7 @@ class SocialUserRef(BaseModel):
 
     id: uuid.UUID
     full_name: str
+    username: str | None
     role: UserRole
     specialty: str | None
     profile_image_url: str | None

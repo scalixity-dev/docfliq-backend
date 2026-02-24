@@ -77,6 +77,42 @@ async def get_user_by_id(
     return result.scalar_one_or_none()
 
 
+# ── Username generation ──────────────────────────────────────────────────────
+
+import re
+import random
+import string
+
+
+def _slugify_name(name: str) -> str:
+    """Turn 'Dr. Sarah Johnson' → 'drsarahjohnson'."""
+    slug = re.sub(r"[^a-z0-9]", "", name.lower())
+    return slug or "user"
+
+
+async def generate_unique_username(session: AsyncSession, full_name: str) -> str:
+    """
+    Generate a unique username from the full name.
+
+    Strategy: slugify the name, then check DB. If taken, append random digits
+    until a unique one is found.
+    """
+    base = _slugify_name(full_name)[:40]  # leave room for suffix
+    # Try the clean slug first
+    candidate = base
+    for _ in range(10):
+        result = await session.execute(
+            select(User.id).where(User.username == candidate).limit(1)
+        )
+        if result.scalar_one_or_none() is None:
+            return candidate
+        # Append random digits
+        suffix = "".join(random.choices(string.digits, k=4))
+        candidate = f"{base}{suffix}"
+    # Extremely unlikely fallback — uuid fragment
+    return f"{base}{uuid.uuid4().hex[:8]}"
+
+
 # ── Guard: ensure account is usable ──────────────────────────────────────────
 
 def assert_account_usable(user: User) -> None:
@@ -130,10 +166,12 @@ async def register_user(
     if phone_number and await get_user_by_phone(session, phone_number) is not None:
         raise PhoneAlreadyExists()
 
+    username = await generate_unique_username(session, full_name)
     user = User(
         email=email,
         password_hash=hash_password(password),
         full_name=full_name,
+        username=username,
         role=role,
         phone_number=phone_number,
         specialty=specialty,
@@ -705,9 +743,11 @@ async def find_or_create_oauth_user(
         return user, False
 
     # 3. Create new account
+    username = await generate_unique_username(session, full_name)
     kwargs: dict = {
         "email": email,
         "full_name": full_name,
+        "username": username,
         "role": UserRole.NON_PHYSICIAN,  # default for OAuth users; profile setup changes later
         "roles": [Role.USER.value],
         "email_verified": email_verified,
@@ -743,11 +783,13 @@ async def find_or_create_user_by_phone(
         return user, False
 
     # First-time OTP registration — create account
+    username = await generate_unique_username(session, full_name)
     new_user = User(
         # Placeholder email; user must set a real one via profile update
         email=f"otp_{phone_number.lstrip('+')}@placeholder.docfliq.internal",
         phone_number=phone_number,
         full_name=full_name,
+        username=username,
         role=role,
         roles=[Role.USER.value],
     )
@@ -774,9 +816,11 @@ async def find_or_create_user_by_email(
         assert_account_usable(user)
         return user, False
 
+    username = await generate_unique_username(session, full_name)
     new_user = User(
         email=email,
         full_name=full_name,
+        username=username,
         role=role,
         roles=[Role.USER.value],
         email_verified=True,

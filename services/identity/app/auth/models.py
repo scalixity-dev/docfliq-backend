@@ -58,6 +58,10 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(
         sa.String(150), nullable=False, index=True
     )
+    # Unique handle displayed as @username — auto-generated from full_name on creation
+    username: Mapped[str | None] = mapped_column(
+        sa.String(50), unique=True, nullable=True, index=True
+    )
     # Professional role — drives content access and profile field requirements
     role: Mapped[UserRole] = mapped_column(
         sa.Enum(

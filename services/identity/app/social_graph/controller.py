@@ -29,6 +29,7 @@ def _user_ref(user) -> SocialUserRef:
     return SocialUserRef(
         id=user.id,
         full_name=user.full_name,
+        username=user.username,
         role=user.role,
         specialty=user.specialty,
         profile_image_url=user.profile_image_url,
