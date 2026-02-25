@@ -13,6 +13,7 @@ from app.interactions.exceptions import (
     CommentAccessDeniedError,
     CommentNotFoundError,
     CommentRateLimitError,
+    IdentityServiceError,
     NotBookmarkedError,
     NotLikedError,
     PostNotFoundError,
@@ -31,7 +32,9 @@ from app.interactions.schemas import (
     RepostCreate,
     RepostResponse,
     ShareResponse,
+    SocialActionResponse,
     UpdateCommentRequest,
+    UserReportResponse,
 )
 
 
@@ -288,3 +291,72 @@ async def report_comment(
         db=db,
     )
     return ReportResponse.model_validate(report)
+
+
+# ---------------------------------------------------------------------------
+# User moderation controllers (proxied via identity service)
+# ---------------------------------------------------------------------------
+
+
+async def block_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> SocialActionResponse:
+    try:
+        data = await service.block_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return SocialActionResponse.model_validate(data)
+
+
+async def unblock_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    try:
+        await service.unblock_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def mute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> SocialActionResponse:
+    try:
+        data = await service.mute_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return SocialActionResponse.model_validate(data)
+
+
+async def unmute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    try:
+        await service.unmute_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def report_user(
+    user_id: UUID,
+    payload: CreateReportRequest,
+    access_token: str,
+    identity_base_url: str,
+) -> UserReportResponse:
+    try:
+        data = await service.report_user(
+            user_id,
+            payload,
+            access_token,
+            identity_base_url,
+        )
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return UserReportResponse.model_validate(data)

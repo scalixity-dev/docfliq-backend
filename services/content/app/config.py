@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     opensearch_url: str = "http://localhost:9200"
     opensearch_enabled: bool = False
     opensearch_index_prefix: str = "docfliq"
+    identity_service_url: str = "http://localhost:8001/api/v1"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -9,8 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.database import get_db
-from app.dependencies import get_current_user, get_optional_user
+from app.dependencies import get_access_token, get_current_user, get_optional_user, get_settings
 from app.interactions import controller
 from app.interactions.schemas import (
     BookmarkListResponse,
@@ -25,7 +26,9 @@ from app.interactions.schemas import (
     RepostCreate,
     RepostResponse,
     ShareResponse,
+    SocialActionResponse,
     UpdateCommentRequest,
+    UserReportResponse,
 )
 
 router = APIRouter(prefix="/interactions", tags=["Interactions"])
@@ -330,3 +333,98 @@ async def report_comment(
     db: AsyncSession = Depends(get_db),
 ) -> ReportResponse:
     return await controller.report_comment(comment_id, user_id, payload, db)
+
+
+# ---------------------------------------------------------------------------
+# User moderation endpoints (delegated to identity service)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/users/{user_id}/block",
+    response_model=SocialActionResponse,
+    summary="Block a user",
+    description=(
+        "Block a user through the identity social graph. "
+        "This removes follow edges in both directions."
+    ),
+    responses={409: _409, 422: _422},
+)
+async def block_user(
+    user_id: UUID,
+    _: UUID = Depends(get_current_user),
+    access_token: str = Depends(get_access_token),
+    settings: Settings = Depends(get_settings),
+) -> SocialActionResponse:
+    return await controller.block_user(user_id, access_token, settings.identity_service_url)
+
+
+@router.delete(
+    "/users/{user_id}/block",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Unblock a user",
+    responses={404: _404},
+)
+async def unblock_user(
+    user_id: UUID,
+    _: UUID = Depends(get_current_user),
+    access_token: str = Depends(get_access_token),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    await controller.unblock_user(user_id, access_token, settings.identity_service_url)
+
+
+@router.post(
+    "/users/{user_id}/mute",
+    response_model=SocialActionResponse,
+    summary="Mute a user",
+    description="Mute a user through the identity social graph.",
+    responses={409: _409, 422: _422},
+)
+async def mute_user(
+    user_id: UUID,
+    _: UUID = Depends(get_current_user),
+    access_token: str = Depends(get_access_token),
+    settings: Settings = Depends(get_settings),
+) -> SocialActionResponse:
+    return await controller.mute_user(user_id, access_token, settings.identity_service_url)
+
+
+@router.delete(
+    "/users/{user_id}/mute",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Unmute a user",
+    responses={404: _404},
+)
+async def unmute_user(
+    user_id: UUID,
+    _: UUID = Depends(get_current_user),
+    access_token: str = Depends(get_access_token),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    await controller.unmute_user(user_id, access_token, settings.identity_service_url)
+
+
+@router.post(
+    "/users/{user_id}/report",
+    response_model=UserReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Report a user",
+    description=(
+        "Submit a moderation report against a user via identity social graph."
+    ),
+    responses={422: _422},
+)
+async def report_user(
+    user_id: UUID,
+    payload: CreateReportRequest,
+    _: UUID = Depends(get_current_user),
+    access_token: str = Depends(get_access_token),
+    settings: Settings = Depends(get_settings),
+) -> UserReportResponse:
+    return await controller.report_user(
+        user_id,
+        payload,
+        access_token,
+        settings.identity_service_url,
+    )

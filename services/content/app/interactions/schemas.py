@@ -228,3 +228,17 @@ class ReportResponse(BaseModel):
     reason: str
     status: ReportStatus = Field(description="Initial status is always OPEN.")
     created_at: datetime
+
+
+class SocialActionResponse(BaseModel):
+    """Generic response for social moderation actions."""
+
+    message: str
+
+
+class UserReportResponse(BaseModel):
+    """Response returned by identity service for user reports."""
+
+    id: UUID
+    status: str
+    created_at: datetime

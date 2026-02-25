@@ -67,3 +67,15 @@ async def get_optional_user(
         return UUID(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None
+
+
+async def get_access_token(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> str:
+    """Return raw bearer token for authenticated proxy calls to other services."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    return credentials.credentials

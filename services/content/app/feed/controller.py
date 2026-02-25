@@ -93,6 +93,7 @@ async def get_for_you_feed(
     limit: int = 20,
     offset: int = 0,
     cohort_ids: list[UUID] | None = None,
+    exclude_author_ids: list[UUID] | None = None,
 ) -> ForYouFeedResponse:
     weight_config, _ = await experiments_service.get_effective_weights(
         user_id=user_id,
@@ -108,6 +109,7 @@ async def get_for_you_feed(
         limit=limit,
         offset=offset,
         weight_config=weight_config,
+        exclude_author_ids=exclude_author_ids,
     )
     return ForYouFeedResponse(
         items=[PostSummary.model_validate(p) for p in posts],
@@ -129,6 +131,7 @@ async def get_following_feed(
     limit: int = 20,
     depth: int = 0,
     cursor: str | None = None,
+    exclude_author_ids: list[UUID] | None = None,
 ) -> FollowingFeedResponse:
     cursor_created_at = None
     cursor_post_id = None
@@ -148,6 +151,7 @@ async def get_following_feed(
         depth=depth,
         cursor_created_at=cursor_created_at,
         cursor_post_id=cursor_post_id,
+        exclude_author_ids=exclude_author_ids,
     )
 
     next_cursor: str | None = None

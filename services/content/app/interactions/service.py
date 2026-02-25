@@ -13,6 +13,7 @@ and should be reconciled via a background job if needed.
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 import redis.asyncio as aioredis
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +42,7 @@ from app.interactions.exceptions import (
     NotLikedError,
     PostNotFoundError,
     SelfReportError,
+    IdentityServiceError,
 )
 from app.interactions.schemas import (
     CreateCommentRequest,
@@ -426,3 +428,159 @@ async def report_target(
 
     await db.refresh(report)
     return report
+
+
+# ---------------------------------------------------------------------------
+# User moderation operations (proxied to identity service)
+# ---------------------------------------------------------------------------
+
+
+def _identity_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}{path}"
+
+
+def _extract_error_detail(response: httpx.Response) -> str:
+    detail = response.reason_phrase or f"Request failed ({response.status_code})"
+    try:
+        payload = response.json()
+    except ValueError:
+        return detail
+
+    if isinstance(payload, dict):
+        body_detail = payload.get("detail")
+        if isinstance(body_detail, str):
+            return body_detail
+        if isinstance(body_detail, list) and body_detail:
+            return ". ".join(
+                str(item.get("msg", "Validation error"))
+                for item in body_detail
+                if isinstance(item, dict)
+            ) or detail
+        body_error = payload.get("error")
+        if isinstance(body_error, str):
+            return body_error
+        if isinstance(body_error, dict) and isinstance(body_error.get("message"), str):
+            return body_error["message"]
+        if isinstance(payload.get("message"), str):
+            return payload["message"]
+
+    return detail
+
+
+async def _identity_request(
+    method: str,
+    path: str,
+    access_token: str,
+    identity_base_url: str,
+    body: dict | None = None,
+) -> dict | None:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    timeout = httpx.Timeout(10.0, connect=3.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.request(
+                method,
+                _identity_url(identity_base_url, path),
+                headers=headers,
+                json=body,
+            )
+    except httpx.RequestError:
+        raise IdentityServiceError(
+            status_code=503,
+            detail="Identity service is unavailable.",
+        )
+
+    if response.status_code >= 400:
+        raise IdentityServiceError(
+            status_code=response.status_code,
+            detail=_extract_error_detail(response),
+        )
+
+    if response.status_code == 204 or not response.content:
+        return None
+
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+async def block_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> dict:
+    result = await _identity_request(
+        "POST",
+        f"/users/{user_id}/block",
+        access_token,
+        identity_base_url,
+    )
+    return result or {"message": "User blocked."}
+
+
+async def unblock_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    await _identity_request(
+        "DELETE",
+        f"/users/{user_id}/block",
+        access_token,
+        identity_base_url,
+    )
+
+
+async def mute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> dict:
+    result = await _identity_request(
+        "POST",
+        f"/users/{user_id}/mute",
+        access_token,
+        identity_base_url,
+    )
+    return result or {"message": "User muted."}
+
+
+async def unmute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    await _identity_request(
+        "DELETE",
+        f"/users/{user_id}/mute",
+        access_token,
+        identity_base_url,
+    )
+
+
+async def report_user(
+    user_id: UUID,
+    payload: CreateReportRequest,
+    access_token: str,
+    identity_base_url: str,
+) -> dict:
+    result = await _identity_request(
+        "POST",
+        f"/users/{user_id}/report",
+        access_token,
+        identity_base_url,
+        body={
+            "target_type": "user",
+            "target_id": str(user_id),
+            "reason": payload.reason,
+        },
+    )
+    if result is None:
+        raise IdentityServiceError(
+            status_code=502,
+            detail="Identity service returned an empty response.",
+        )
+    return result
