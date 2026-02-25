@@ -16,12 +16,16 @@ Tag filtering uses:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.models.channel import Channel
 from app.models.enums import ContentType, PostStatus, PostVisibility
 from app.models.post import Post
@@ -37,7 +41,18 @@ from app.search.schemas import (
     WebinarSearchResult,
 )
 
+logger = logging.getLogger(__name__)
+
 _LIVE_STATUSES = (PostStatus.PUBLISHED, PostStatus.EDITED)
+
+_settings: Settings | None = None
+
+
+def _get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
 
 
 # ---------------------------------------------------------------------------
@@ -180,32 +195,69 @@ async def search_people(
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[PeopleSearchResult], int]:
-    """Search user_index (stub — returns empty list when index is unpopulated)."""
-    if os_client is None:
-        return [], 0
-    try:
-        raw = await os_helpers.search_users(
-            client=os_client,
-            index_prefix=index_prefix,
-            query=query or "",
-            specialty=specialty,
-            limit=limit,
-            offset=offset,
-        )
-        hits = raw.get("hits", {}) if raw else {}
-        total = hits.get("total", {}).get("value", 0)
-        results = [
-            PeopleSearchResult(
-                user_id=h["_source"].get("user_id"),
-                full_name=h["_source"].get("full_name", ""),
-                specialty=h["_source"].get("specialty"),
-                role=h["_source"].get("role"),
-                verification_status=h["_source"].get("verification_status"),
+    """Search users — tries OpenSearch first, falls back to identity service."""
+    # Try OpenSearch user_index first
+    if os_client is not None:
+        try:
+            raw = await os_helpers.search_users(
+                client=os_client,
+                index_prefix=index_prefix,
+                query=query or "",
+                specialty=specialty,
+                limit=limit,
+                offset=offset,
             )
-            for h in hits.get("hits", [])
-        ]
-        return results, total
-    except Exception:
+            hits = raw.get("hits", {}) if raw else {}
+            total = hits.get("total", {}).get("value", 0)
+            if total > 0:
+                results = [
+                    PeopleSearchResult(
+                        user_id=h["_source"].get("user_id"),
+                        full_name=h["_source"].get("full_name", ""),
+                        specialty=h["_source"].get("specialty"),
+                        role=h["_source"].get("role"),
+                        verification_status=h["_source"].get("verification_status"),
+                        profile_image_url=h["_source"].get("profile_image_url"),
+                    )
+                    for h in hits.get("hits", [])
+                ]
+                return results, total
+        except Exception:
+            pass
+
+    # Fallback: call identity service /users/search
+    return await _search_people_identity(query, limit, offset)
+
+
+async def _search_people_identity(
+    query: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[PeopleSearchResult], int]:
+    """Call identity service GET /users/search for people search fallback."""
+    if not query:
+        return [], 0
+    settings = _get_settings()
+    url = f"{settings.identity_service_url}/users/search?q={quote(query)}&limit={limit}&offset={offset}"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            results = [
+                PeopleSearchResult(
+                    user_id=item.get("id"),
+                    full_name=item.get("full_name", ""),
+                    specialty=item.get("specialty"),
+                    role=item.get("role"),
+                    verification_status=item.get("verification_status"),
+                    profile_image_url=item.get("profile_image_url"),
+                )
+                for item in data.get("items", [])
+            ]
+            return results, data.get("total", 0)
+    except Exception as exc:
+        logger.warning("Identity service people search failed: %s", exc)
         return [], 0
 
 

@@ -15,6 +15,28 @@ class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+# ── Public user search ────────────────────────────────────────────────────
+
+class UserSearchItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    username: str | None = None
+    role: UserRole
+    specialty: str | None = None
+    profile_image_url: str | None = None
+    verification_status: VerificationStatus
+
+
+class UserSearchResponse(BaseModel):
+    items: list[UserSearchItem] = Field(default_factory=list)
+    total: int = 0
+    query: str | None = None
+    limit: int = 20
+    offset: int = 0
+
+
 # ── Role-specific required fields (used for profile_complete computation) ──────
 
 _REQUIRED_FIELDS: dict[UserRole, list[str]] = {

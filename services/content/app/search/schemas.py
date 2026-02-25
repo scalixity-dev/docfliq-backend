@@ -104,13 +104,14 @@ class ChannelSearchResponse(BaseModel):
 
 
 class PeopleSearchResult(BaseModel):
-    """User profile search result from user_index (OpenSearch)."""
+    """User profile search result from user_index (OpenSearch) or identity service."""
 
     user_id: UUID | None = None
     full_name: str = ""
     specialty: str | None = None
     role: str | None = None
     verification_status: str | None = None
+    profile_image_url: str | None = None
 
 
 class PeopleSearchResponse(BaseModel):

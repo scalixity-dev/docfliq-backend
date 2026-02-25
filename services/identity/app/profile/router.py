@@ -2,26 +2,41 @@
 Profile domain — router.
 
 Routes:
+  GET    /api/v1/users/search      Public user search (ILIKE on name/username)
   GET    /api/v1/users/me          Get own full profile
   PATCH  /api/v1/users/me          Update own profile (partial)
   GET    /api/v1/users/{user_id}   Get any user's public profile
 
-All routes require a valid Bearer token.
+All routes except /search require a valid Bearer token.
 """
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.profile import controller as ctrl
-from app.profile.schemas import ProfileResponse, UpdateProfileRequest
+from app.profile.schemas import ProfileResponse, UpdateProfileRequest, UserSearchResponse
 from shared.models.user import CurrentUser
 
 router = APIRouter(prefix="/users", tags=["profile"])
+
+
+@router.get(
+    "/search",
+    response_model=UserSearchResponse,
+    summary="Search users by name or username",
+)
+async def search_users(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query."),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_db),
+) -> UserSearchResponse:
+    return await ctrl.search(session, query=q, limit=limit, offset=offset)
 
 
 @router.get("/me", response_model=ProfileResponse, summary="Get own profile")

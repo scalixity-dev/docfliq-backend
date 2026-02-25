@@ -82,13 +82,47 @@ async def lifespan(app: FastAPI):
     app.state.opensearch = None
     if settings.opensearch_enabled:
         from opensearchpy import AsyncOpenSearch
-        os_client = AsyncOpenSearch(
-            hosts=[settings.opensearch_url],
-            use_ssl=settings.opensearch_url.startswith("https"),
-            verify_certs=False,
-            http_compress=True,
-        )
-        app.state.opensearch = os_client
+
+        use_ssl = settings.opensearch_url.startswith("https")
+
+        if settings.opensearch_auth_mode == "aws":
+            # Amazon OpenSearch Service — sign requests with SigV4
+            from opensearchpy import AWSV4SignerAsyncAuth
+            import boto3
+
+            credentials = boto3.Session().get_credentials()
+            auth = AWSV4SignerAsyncAuth(
+                credentials, settings.opensearch_aws_region, "es"
+            )
+            os_client = AsyncOpenSearch(
+                hosts=[settings.opensearch_url],
+                http_auth=auth,
+                use_ssl=use_ssl,
+                verify_certs=True,
+                http_compress=True,
+            )
+        else:
+            # Self-hosted / local OpenSearch — no auth
+            os_client = AsyncOpenSearch(
+                hosts=[settings.opensearch_url],
+                use_ssl=use_ssl,
+                verify_certs=False,
+                http_compress=True,
+            )
+        # Try to connect and create indexes; fall back gracefully if OpenSearch is down
+        try:
+            from app.search.opensearch import ensure_indexes
+            await ensure_indexes(os_client, settings.opensearch_index_prefix)
+            app.state.opensearch = os_client
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "OpenSearch unavailable — continuing without it: %s", exc
+            )
+            try:
+                await os_client.close()
+            except Exception:
+                pass
 
     yield
 
