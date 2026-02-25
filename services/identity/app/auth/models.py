@@ -121,6 +121,15 @@ class User(Base):
         server_default=sa.text("false"),
     )
 
+    # ── Onboarding flag ────────────────────────────────────────────────────────
+    # True until the user completes sign-up questions (role, location, etc.)
+    is_new_user: Mapped[bool] = mapped_column(
+        sa.Boolean(),
+        nullable=False,
+        default=True,
+        server_default=sa.text("true"),
+    )
+
     # ── Account flags ─────────────────────────────────────────────────────────
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean(),

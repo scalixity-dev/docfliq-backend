@@ -57,6 +57,8 @@ class UpdateProfileRequest(_Base):
     phone_number: str | None = Field(None, max_length=20)
     # Notification preferences — JSONB dict of channel toggles
     notification_preferences: dict | None = None
+    # Set to False when user completes onboarding
+    is_new_user: bool | None = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -122,6 +124,7 @@ class ProfileResponse(BaseModel):
     pharmacy_name: str | None
     # Notification preferences
     notification_preferences: dict | None
+    is_new_user: bool
     created_at: datetime
 
     @computed_field  # type: ignore[misc]
