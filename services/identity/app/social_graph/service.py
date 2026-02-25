@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.exceptions import (
     AlreadyBlocked,
     AlreadyFollowing,
@@ -31,6 +33,9 @@ from app.exceptions import (
 from app.social_graph.constants import FOLLOW_LIMIT, ReportStatus, ReportTargetType
 from app.social_graph.models import Block, Follow, Mute, Report
 from app.auth.models import User
+
+
+settings = Settings()
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -96,7 +101,10 @@ async def follow(
     edge = Follow(follower_id=follower_id, following_id=following_id)
     session.add(edge)
     await session.flush()
-    # TODO: emit user.followed event (SNS/SQS not wired yet)
+
+    # Best-effort notification to content service
+    await _notify_follow_event(follower_id=follower_id, following_id=following_id)
+
     return edge
 
 
@@ -186,6 +194,27 @@ async def unmute(
             Mute.muted_id == muted_id,
         )
     )
+
+
+async def _notify_follow_event(follower_id: uuid.UUID, following_id: uuid.UUID) -> None:
+    """Send a follow notification to the content service. Best-effort only."""
+    import httpx
+
+    if not settings.content_service_url:
+        return
+
+    url = f"{settings.content_service_url.rstrip('/')}/notifications/internal"
+    payload: dict[str, Any] = {
+        "user_id": str(following_id),
+        "actor_id": str(follower_id),
+        "type": "follow",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(url, json=payload)
+    except Exception:  # noqa: BLE001
+        return
 
 
 # ── Block visibility check ─────────────────────────────────────────────────────

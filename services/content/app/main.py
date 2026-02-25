@@ -10,6 +10,8 @@ from app.cms.router import router as cms_router
 from app.experiments.router import router as experiments_router
 from app.feed.router import router as feed_router
 from app.interactions.router import router as interactions_router
+from app.notifications.router import router as notifications_router
+from app.notifications.internal_router import router as notifications_internal_router
 from app.search.router import router as search_router
 from shared.middleware.error_handler import error_envelope_middleware
 from shared.middleware.request_id import request_id_middleware
@@ -128,6 +130,8 @@ def create_app() -> FastAPI:
     app.include_router(feed_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(interactions_router, prefix="/api/v1")
+    app.include_router(notifications_router, prefix="/api/v1")
+    app.include_router(notifications_internal_router, prefix="/api/v1")
     app.include_router(experiments_router, prefix="/api/v1")
 
     @app.get("/health", tags=["Health"])

@@ -33,6 +33,7 @@ CONTENT_TABLES = frozenset({
     "cohorts",
     "ab_experiments",
     "experiment_events",
+    "notifications",
 })
 
 
