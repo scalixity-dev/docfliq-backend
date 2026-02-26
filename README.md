@@ -107,6 +107,266 @@ All `DATABASE_URL`s point to local Docker Postgres by default. No AWS credential
 
 ---
 
+## EC2 Deployment (Docker)
+
+Deploy the **Identity** and **Content** services on a single EC2 instance using Docker Compose. Postgres runs on **AWS RDS** (not containerized). Redis, OpenSearch, and Nginx (with SSL via Let's Encrypt) run as Docker containers on the EC2 instance.
+
+### Architecture
+
+```
+                         ┌── AWS RDS ──────────┐
+                         │  postgres :5432      │
+                         │  identity_db         │
+                         │  content_db          │
+                         └──────────────────────┘
+                                   ▲
+┌──────────────────────────────────┼──────────────────────────┐
+│  EC2 Instance                    │                          │
+│                                  │                          │
+│  ┌──────────┐  /api/v1/auth..  ┌──────────┐                │
+│  │          │─────────────────▶│ identity │────────────────┘
+│  │  nginx   │                  │  :8000   │
+│  │  :80/443 │  /api/v1/cms..  ┌──────────┐
+│  │  (SSL)   │─────────────────▶│ content  │
+│  └──────────┘                  │  :8000   │
+│                                └──────────┘
+│  ┌──────────┐  ┌──────────────┐
+│  │  redis   │  │  opensearch   │
+│  │  :6379   │  │    :9200      │
+│  └──────────┘  └──────────────┘
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Prerequisites
+
+| Requirement | Minimum |
+|-------------|---------|
+| EC2 instance | t3.medium (2 vCPU, 4 GB RAM) or larger |
+| Storage | 30 GB gp3 |
+| OS | Ubuntu 22.04 / Amazon Linux 2023 |
+| Docker | 24+ |
+| Docker Compose | v2 (bundled with Docker) |
+| Ports open | 80, 443 (inbound); 22 (SSH) |
+| AWS RDS | Postgres 16, accessible from EC2 security group |
+| DNS | A record pointing your domain to the EC2 public IP (required for SSL) |
+
+### Step 1 — Install Docker on EC2
+
+```bash
+# Ubuntu 22.04
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+# Log out and back in for group change to take effect
+```
+
+### Step 2 — Clone and configure
+
+```bash
+git clone https://github.com/your-org/docfliq-backend.git
+cd docfliq-backend
+
+# Create env file from template
+cp .env.ec2.example .env.ec2
+
+# Edit with your production values
+nano .env.ec2
+```
+
+**Required variables** (must be changed from defaults):
+
+| Variable | Description |
+|----------|-------------|
+| `IDENTITY_DATABASE_URL` | RDS connection string for identity_db |
+| `CONTENT_DATABASE_URL` | RDS connection string for content_db |
+| `JWT_SECRET` | Random 64-char string (shared by identity + content) |
+| `CORS_ORIGINS` | Your frontend domain(s), comma-separated |
+| `APP_BASE_URL` | Your frontend URL |
+| `DOMAIN` | API domain for SSL cert (e.g. `api.docfliq.com`) |
+
+### Step 3 — Create databases on RDS
+
+```bash
+# Connect to RDS and create the databases (one-time)
+psql -h your-rds-host.region.rds.amazonaws.com -U docfliq -c "CREATE DATABASE identity_db;"
+psql -h your-rds-host.region.rds.amazonaws.com -U docfliq -c "CREATE DATABASE content_db;"
+```
+
+### Step 4 — Choose which services to run (profiles)
+
+Every service has a **profile**. Use `--profile` to pick what runs on this machine.
+
+| Profile | Starts |
+|---------|--------|
+| `identity` | Identity service |
+| `content` | Content service |
+| `redis` | Redis |
+| `opensearch` | OpenSearch |
+| `nginx` | Nginx + Certbot |
+| `all` | Everything above |
+
+**All-in-one (single machine):**
+
+```bash
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile all up -d --build
+```
+
+**Pick specific services:**
+
+```bash
+# Only identity + redis + nginx on this machine
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile identity --profile redis --profile nginx up -d --build
+
+# Only content + opensearch + redis + nginx on another machine
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile content --profile redis --profile opensearch --profile nginx up -d --build
+```
+
+This starts only the containers you selected. Example for `--profile all`:
+
+| Container | Image | Port (host) |
+|-----------|-------|-------------|
+| `redis` | redis:7-alpine | 127.0.0.1:6379 |
+| `opensearch` | opensearchproject/opensearch:2.11.0 | 127.0.0.1:9200 |
+| `identity` | built from `services/identity/Dockerfile` | 127.0.0.1:8001 |
+| `content` | built from `services/content/Dockerfile` | 127.0.0.1:8002 |
+| `nginx` | nginx:1.25-alpine | 0.0.0.0:80, 443 |
+| `certbot` | certbot/certbot | — (renewal daemon) |
+
+### Step 5 — Run database migrations
+
+```bash
+# Run Alembic migrations inside each service container
+docker compose -f docker-compose.ec2.yml --profile all exec identity \
+  alembic -c /app/migrations/identity/alembic.ini upgrade head
+
+docker compose -f docker-compose.ec2.yml --profile all exec content \
+  alembic -c /app/migrations/content/alembic.ini upgrade head
+```
+
+### Step 6 — Verify (HTTP)
+
+```bash
+# Check all containers are running
+docker compose -f docker-compose.ec2.yml --profile all ps
+
+# Health checks
+curl http://localhost/identity/health
+# → {"status":"ok","service":"identity"}
+
+curl http://localhost/content/health
+# → {"status":"ok","service":"content"}
+
+# API endpoint test
+curl http://localhost/api/v1/feed
+```
+
+### Step 7 — Enable SSL with Let's Encrypt
+
+Make sure your DNS A record is pointing to the EC2 public IP before running this.
+
+```bash
+# 1. Get the SSL certificate
+docker compose -f docker-compose.ec2.yml --profile nginx run --rm certbot \
+  certonly --webroot -w /var/www/certbot \
+  -d api.yourdomain.com --agree-tos -m your@email.com
+
+# 2. Edit nginx.ec2.conf:
+#    - Uncomment the HTTPS server block (port 443)
+#    - Replace YOUR_DOMAIN with your actual domain (e.g. api.yourdomain.com)
+#    - In the HTTP server block, uncomment the "return 301" redirect
+#    - In the HTTP server block, remove/comment out the temporary location blocks
+nano nginx.ec2.conf
+
+# 3. Reload nginx to pick up the changes
+docker compose -f docker-compose.ec2.yml --profile all exec nginx nginx -s reload
+
+# 4. Verify HTTPS works
+curl https://api.yourdomain.com/identity/health
+```
+
+Certbot auto-renews every 12 hours inside its container. Nginx reads certs from a shared volume, so renewals are picked up automatically.
+
+### Multi-Machine Deployment
+
+When splitting services across multiple EC2 instances, override these in `.env.ec2` on each machine:
+
+```bash
+# Machine A (.env.ec2) — runs identity only
+IDENTITY_SERVICE_URL=http://identity:8000/api/v1          # local (default)
+CONTENT_SERVICE_URL=http://10.0.1.20:8002/api/v1          # Machine B private IP
+REDIS_URL=redis://redis:6379/0                            # local redis
+IDENTITY_HOST_PORT=0.0.0.0:8001                           # expose to other machines
+
+# Machine B (.env.ec2) — runs content + opensearch only
+CONTENT_SERVICE_URL=http://content:8000/api/v1             # local (default)
+IDENTITY_SERVICE_URL=http://10.0.1.10:8001/api/v1          # Machine A private IP
+REDIS_URL=redis://redis:6379/0                             # local redis
+OPENSEARCH_URL=http://opensearch:9200                      # local opensearch
+CONTENT_HOST_PORT=0.0.0.0:8002                             # expose to other machines
+```
+
+> Use private IPs within the same VPC. Open the required ports (8001, 8002) in the EC2 security group between machines.
+
+### Nginx Route Map
+
+| Path prefix | Service |
+|-------------|---------|
+| `/api/v1/auth/*` | identity |
+| `/api/v1/profile/*` | identity |
+| `/api/v1/social/*` | identity |
+| `/api/v1/verification/*` | identity |
+| `/api/v1/admin/users/*` | identity |
+| `/api/v1/cms/*` | content |
+| `/api/v1/feed/*` | content |
+| `/api/v1/search/*` | content |
+| `/api/v1/interactions/*` | content |
+| `/api/v1/notifications/*` | content |
+| `/identity/health`, `/identity/docs` | identity |
+| `/content/health`, `/content/docs` | content |
+
+### Operations
+
+```bash
+# View logs (use the same --profile flags you started with)
+docker compose -f docker-compose.ec2.yml --profile all logs -f identity content
+
+# Restart a single service
+docker compose -f docker-compose.ec2.yml --profile all restart identity
+
+# Rebuild and redeploy (after code changes / git pull)
+git pull
+docker compose -f docker-compose.ec2.yml --profile all up -d --build identity content
+
+# Stop everything (Redis/OpenSearch data persists in volumes)
+docker compose -f docker-compose.ec2.yml --profile all down
+
+# Full reset (destroys Redis + OpenSearch data — RDS data is safe)
+docker compose -f docker-compose.ec2.yml --profile all down -v
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.ec2.yml` | Compose file with profiles (identity, content, redis, opensearch, nginx, all) |
+| `nginx.ec2.conf` | Nginx reverse proxy config with path-based routing + SSL |
+| `.env.ec2.example` | Environment variable template — copy to `.env.ec2` |
+| `services/identity/Dockerfile` | Identity service Docker image |
+| `services/content/Dockerfile` | Content service Docker image |
+
+### RDS Security Group
+
+Ensure the EC2 instance's security group is allowed to connect to RDS on port 5432. In the RDS security group, add an inbound rule:
+
+| Type | Port | Source |
+|------|------|--------|
+| PostgreSQL | 5432 | EC2 security group ID (e.g. `sg-0abc123`) |
+
+---
+
 ## Microservices
 
 ### MS-1 · Identity — `services/identity` · port 8001
