@@ -176,9 +176,8 @@ async def confirm_upload(
         # Images processed in-service via Pillow background task
         asset.transcode_status = TranscodeStatus.PROCESSING
     elif asset.asset_type == AssetType.VIDEO:
-        # Videos stored as-is (original MP4, no HLS transcoding)
-        asset.transcode_status = TranscodeStatus.COMPLETED
-        asset.processed_url = asset.original_url
+        # Video transcoding via MediaConvert (background task submits job)
+        asset.transcode_status = TranscodeStatus.PROCESSING
     elif asset.asset_type in (AssetType.PDF, AssetType.SCORM):
         # No processing needed
         asset.transcode_status = TranscodeStatus.COMPLETED

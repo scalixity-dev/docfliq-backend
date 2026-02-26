@@ -121,10 +121,14 @@ async def confirm_upload(
     if asset is None:
         raise AssetNotFound()
 
-    # Schedule background image processing (images only)
+    # Schedule background processing
     if asset.asset_type == AssetType.IMAGE:
         background_tasks.add_task(
             _process_image_background, asset.asset_id, s3_key, settings,
+        )
+    elif asset.asset_type == AssetType.VIDEO:
+        background_tasks.add_task(
+            _process_video_background, asset.asset_id, s3_key, settings,
         )
 
     return AssetResponse.model_validate(asset)
@@ -259,6 +263,80 @@ async def _process_image_background(
                     asset_id,
                     status=TranscodeStatus.FAILED,
                     error_message="In-service image processing failed",
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to update error status for asset %s", asset_id)
+
+
+async def _process_video_background(
+    asset_id: uuid.UUID,
+    s3_key: str,
+    settings: Settings,
+) -> None:
+    """
+    Background task: submit a MediaConvert transcoding job and poll until done.
+
+    Produces HLS (720p + 1080p + 4K) + MP4 download + thumbnail.
+    Uses its own DB session (request session is closed by the time this runs).
+    """
+    from app.database import get_session_factory
+    from app.mediaconvert import poll_job_until_done, submit_transcode_job
+
+    try:
+        # 1. Submit MediaConvert job
+        job_id = await submit_transcode_job(s3_key, settings)
+
+        # 2. Store job_id in DB
+        factory = get_session_factory()
+        async with factory() as session:
+            await service.update_transcode_status(
+                session,
+                asset_id,
+                status=TranscodeStatus.PROCESSING,
+                mediaconvert_job_id=job_id,
+            )
+            await session.commit()
+
+        logger.info("MediaConvert job %s submitted for asset %s", job_id, asset_id)
+
+        # 3. Poll until done
+        result = await poll_job_until_done(job_id, settings)
+
+        # 4. Update DB with result
+        async with factory() as session:
+            if result["status"] == "COMPLETED":
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.COMPLETED,
+                    processed_url=result.get("processed_url"),
+                    hls_url=result.get("hls_url"),
+                    thumbnail_url=result.get("thumbnail_url"),
+                    duration_secs=result.get("duration_secs"),
+                    resolution=result.get("resolution"),
+                )
+                logger.info("Video transcoding completed for asset %s", asset_id)
+            else:
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.FAILED,
+                    error_message=result.get("error_message", "Transcoding failed"),
+                )
+                logger.error("Video transcoding failed for asset %s: %s", asset_id, result.get("error_message"))
+            await session.commit()
+
+    except Exception:
+        logger.exception("Video processing failed for asset %s", asset_id)
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.FAILED,
+                    error_message="Failed to submit or poll MediaConvert job",
                 )
                 await session.commit()
         except Exception:

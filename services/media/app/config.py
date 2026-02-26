@@ -35,11 +35,11 @@ class Settings(BaseSettings):
     # S3 presigned URL expiry
     s3_upload_expiry_seconds: int = 900  # 15 min for PUT uploads
 
-    # MediaConvert — unused (in-service processing), kept for future use
-    # mediaconvert_endpoint: str = ""
-    # mediaconvert_role_arn: str = ""
-    # mediaconvert_queue_arn: str = ""
-    # mediaconvert_output_bucket: str = ""
+    # MediaConvert (video transcoding)
+    mediaconvert_endpoint: str = ""  # account-specific endpoint URL
+    mediaconvert_role_arn: str = ""  # IAM role for MediaConvert to access S3
+    mediaconvert_queue_arn: str = ""  # optional, uses default queue if empty
+    mediaconvert_output_bucket: str = ""  # defaults to s3_bucket_media if empty
 
     # CloudFront — unused (S3 presigned URLs used instead), kept for future use
     # cloudfront_domain: str = ""

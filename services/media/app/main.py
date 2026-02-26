@@ -25,7 +25,7 @@ S3-based media management for the Docfliq platform.
 * **Upload** — presigned S3 PUT URLs for direct file uploads (video, image, PDF, SCORM).
 * **Image processing** — in-service Pillow processing: resize, compress, WebP conversion,
   thumbnail generation (150x150, 600x600, 1200x1200), avatar crops, course thumbnails.
-* **Video storage** — original MP4 served directly via S3 presigned URLs.
+* **Video transcoding** — AWS MediaConvert: HLS (720p + 1080p + 4K) + MP4 download + thumbnail.
 * **Secure URLs** — S3 presigned URLs for time-limited content access.
 * **Status tracking** — transcode status (PENDING → PROCESSING → COMPLETED/FAILED).
 
