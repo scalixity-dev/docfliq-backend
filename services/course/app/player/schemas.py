@@ -45,6 +45,17 @@ class DocumentHeartbeatRequest(BaseModel):
     )
 
 
+class PresentationHeartbeatRequest(BaseModel):
+    """Client sends this during slide/presentation viewing."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    current_slide: int = Field(ge=1, description="Current slide number (1-based).")
+    slides_viewed: list[int] = Field(
+        description="Array of slide numbers the user has viewed (1-based).",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resume
 # ---------------------------------------------------------------------------
@@ -153,6 +164,12 @@ class DocumentHeartbeatResponse(BaseModel):
     is_completed: bool
 
 
+class PresentationHeartbeatResponse(BaseModel):
+    slides_viewed: list[int]
+    slides_pct: float
+    is_completed: bool
+
+
 # ---------------------------------------------------------------------------
 # Progress detail
 # ---------------------------------------------------------------------------
@@ -175,6 +192,8 @@ class ModuleProgressResponse(BaseModel):
     module_id: UUID
     title: str
     progress_pct: Decimal
+    is_locked: bool = False
+    is_required: bool = True
     lessons: list[LessonProgressDetail]
 
 
@@ -183,5 +202,40 @@ class CourseProgressDetailResponse(BaseModel):
     course_id: UUID
     overall_progress_pct: Decimal
     status: str
+    module_unlock_mode: str = "ALL_UNLOCKED"
     modules: list[ModuleProgressResponse]
     completion_logic: dict
+
+
+# ---------------------------------------------------------------------------
+# SCORM runtime data
+# ---------------------------------------------------------------------------
+
+
+class ScormApiLogEntry(BaseModel):
+    api_call: str
+    parameter: str | None = None
+    value: str | None = None
+    error_code: str | None = None
+    timestamp: datetime
+
+
+class ScormApiLogRequest(BaseModel):
+    """Client-side SCORM JS wrapper posts each API call for debugging."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    api_call: str = Field(max_length=100, description="SCORM API method name.")
+    parameter: str | None = Field(default=None, max_length=200)
+    value: str | None = None
+    error_code: str | None = Field(default=None, max_length=10)
+
+
+class ScormRuntimeDataResponse(BaseModel):
+    session_id: UUID
+    tracking_data: dict
+    suspend_data: str | None = None
+    api_logs: list[ScormApiLogEntry]
+    status: str
+    score_raw: int | None = None
+    total_time_secs: int | None = None

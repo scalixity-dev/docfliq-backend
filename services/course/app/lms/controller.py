@@ -12,30 +12,44 @@ from app.exceptions import (
     CourseNotFoundError,
     CourseNotPublishedError,
     EnrollmentNotFoundError,
+    EnrollmentPendingApprovalError,
+    InvalidAccessCodeError,
+    InvalidDependencyGraphError,
+    InvalidPromoCodeError,
     InvalidStatusTransitionError,
     LessonNotFoundError,
     ModuleNotFoundError,
     NotCourseOwnerError,
     NotEnrolledError,
     PaymentRequiredError,
+    PromoCodeNotFoundError,
     RefundNotEligibleError,
+    SelfRegistrationDisabledError,
 )
 from app.lms import service
 from app.lms.schemas import (
     CourseDetailResponse,
+    CourseInstructorRequest,
+    CourseInstructorResponse,
     CourseListResponse,
     CourseResponse,
     CourseSummary,
+    CourseTimelineResponse,
     CreateCourseRequest,
     CreateEnrollmentRequest,
     CreateLessonRequest,
     CreateModuleRequest,
+    CreatePromoCodeRequest,
     EnrollmentDetailResponse,
     EnrollmentResponse,
     LessonProgressResponse,
     LessonResponse,
+    ModuleDependencyEdge,
+    ModuleDependencyGraphResponse,
+    ModuleDependencyNode,
     ModuleResponse,
     ModuleWithLessonsResponse,
+    PromoCodeResponse,
     UpdateCourseRequest,
     UpdateLessonRequest,
     UpdateModuleRequest,
@@ -45,7 +59,7 @@ from app.models.enums import CourseStatus, EnrollmentStatus, PricingType
 
 
 def _handle_domain_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, (CourseNotFoundError, ModuleNotFoundError, LessonNotFoundError, EnrollmentNotFoundError)):
+    if isinstance(exc, (CourseNotFoundError, ModuleNotFoundError, LessonNotFoundError, EnrollmentNotFoundError, PromoCodeNotFoundError)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, NotCourseOwnerError):
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the course instructor.")
@@ -61,6 +75,16 @@ def _handle_domain_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if isinstance(exc, RefundNotEligibleError):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Refund not eligible.")
+    if isinstance(exc, SelfRegistrationDisabledError):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Self-registration is disabled for this course.")
+    if isinstance(exc, InvalidAccessCodeError):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid access code.")
+    if isinstance(exc, InvalidPromoCodeError):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired promo code.")
+    if isinstance(exc, EnrollmentPendingApprovalError):
+        return HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Enrollment submitted for approval.")
+    if isinstance(exc, InvalidDependencyGraphError):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error.")
 
 
@@ -111,6 +135,11 @@ async def get_course_detail(db: AsyncSession, course_id: UUID) -> CourseDetailRe
                     course_id=m.course_id,
                     title=m.title,
                     sort_order=m.sort_order,
+                    prerequisite_module_ids=m.prerequisite_module_ids,
+                    is_required=m.is_required,
+                    cert_enabled=m.cert_enabled,
+                    cert_template=m.cert_template,
+                    cert_custom_title=m.cert_custom_title,
                     lessons=[LessonResponse.model_validate(l) for l in lessons],
                     created_at=m.created_at,
                 )
@@ -205,9 +234,7 @@ async def create_module(
 ) -> ModuleResponse:
     try:
         module = await service.create_module(
-            db, course_id, instructor_id,
-            title=body.title,
-            sort_order=body.sort_order,
+            db, course_id, instructor_id, **body.model_dump(),
         )
         return ModuleResponse.model_validate(module)
     except Exception as exc:
@@ -308,6 +335,22 @@ async def delete_lesson(
 # ---------------------------------------------------------------------------
 
 
+async def enroll(
+    db: AsyncSession,
+    course_id: UUID,
+    user_id: UUID,
+    body: CreateEnrollmentRequest,
+) -> EnrollmentResponse:
+    try:
+        enrollment = await service.enroll(
+            db, course_id, user_id, **body.model_dump(exclude_unset=True),
+        )
+        return EnrollmentResponse.model_validate(enrollment)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# Legacy aliases
 async def enroll_free(
     db: AsyncSession,
     course_id: UUID,
@@ -438,6 +481,197 @@ async def get_course_progress(
         return EnrollmentDetailResponse(
             enrollment=EnrollmentResponse.model_validate(enrollment),
             lesson_progress=[LessonProgressResponse.model_validate(p) for p in progress],
+        )
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Instructor management
+# ---------------------------------------------------------------------------
+
+
+async def add_instructor(
+    db: AsyncSession,
+    course_id: UUID,
+    owner_id: UUID,
+    body: CourseInstructorRequest,
+) -> CourseInstructorResponse:
+    try:
+        instructor = await service.add_instructor(
+            db, course_id, owner_id, **body.model_dump(),
+        )
+        return CourseInstructorResponse.model_validate(instructor)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def remove_instructor(
+    db: AsyncSession,
+    course_id: UUID,
+    instructor_id: UUID,
+    owner_id: UUID,
+) -> None:
+    try:
+        await service.remove_instructor(db, course_id, instructor_id, owner_id)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def list_instructors(
+    db: AsyncSession,
+    course_id: UUID,
+) -> list[CourseInstructorResponse]:
+    try:
+        instructors = await service.list_instructors(db, course_id)
+        return [CourseInstructorResponse.model_validate(i) for i in instructors]
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Enrollment approval
+# ---------------------------------------------------------------------------
+
+
+async def approve_enrollment(
+    db: AsyncSession,
+    enrollment_id: UUID,
+    instructor_id: UUID,
+) -> EnrollmentResponse:
+    try:
+        enrollment = await service.approve_enrollment(db, enrollment_id, instructor_id)
+        return EnrollmentResponse.model_validate(enrollment)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def reject_enrollment(
+    db: AsyncSession,
+    enrollment_id: UUID,
+    instructor_id: UUID,
+) -> None:
+    try:
+        await service.reject_enrollment(db, enrollment_id, instructor_id)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def list_pending_enrollments(
+    db: AsyncSession,
+    course_id: UUID,
+    instructor_id: UUID,
+) -> list[EnrollmentResponse]:
+    try:
+        enrollments = await service.list_pending_enrollments(db, course_id, instructor_id)
+        return [EnrollmentResponse.model_validate(e) for e in enrollments]
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Promo codes
+# ---------------------------------------------------------------------------
+
+
+async def create_promo_code(
+    db: AsyncSession,
+    course_id: UUID,
+    instructor_id: UUID,
+    body: CreatePromoCodeRequest,
+) -> PromoCodeResponse:
+    try:
+        promo = await service.create_promo_code(
+            db, course_id, instructor_id, **body.model_dump(),
+        )
+        return PromoCodeResponse.model_validate(promo)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def list_promo_codes(
+    db: AsyncSession,
+    course_id: UUID,
+    instructor_id: UUID,
+) -> list[PromoCodeResponse]:
+    try:
+        promos = await service.list_promo_codes(db, course_id, instructor_id)
+        return [PromoCodeResponse.model_validate(p) for p in promos]
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+async def deactivate_promo_code(
+    db: AsyncSession,
+    promo_code_id: UUID,
+    instructor_id: UUID,
+) -> None:
+    try:
+        await service.deactivate_promo_code(db, promo_code_id, instructor_id)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+
+async def get_course_timeline(
+    db: AsyncSession,
+    course_id: UUID,
+) -> CourseTimelineResponse:
+    try:
+        items = await service.get_course_timeline(db, course_id)
+        return CourseTimelineResponse(items=items)
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Module dependency graph
+# ---------------------------------------------------------------------------
+
+
+async def get_module_dependency_graph(
+    db: AsyncSession,
+    course_id: UUID,
+) -> ModuleDependencyGraphResponse:
+    try:
+        course, modules = await service.get_module_dependency_graph(db, course_id)
+
+        nodes = [
+            ModuleDependencyNode(
+                module_id=m.module_id,
+                title=m.title,
+                sort_order=m.sort_order,
+                is_required=m.is_required,
+            )
+            for m in modules
+        ]
+
+        edges: list[ModuleDependencyEdge] = []
+        from app.models.enums import ModuleUnlockMode
+
+        if course.module_unlock_mode == ModuleUnlockMode.SEQUENTIAL:
+            for i in range(1, len(modules)):
+                edges.append(ModuleDependencyEdge(
+                    from_module_id=modules[i - 1].module_id,
+                    to_module_id=modules[i].module_id,
+                ))
+        elif course.module_unlock_mode == ModuleUnlockMode.CUSTOM:
+            for m in modules:
+                for prereq_id in (m.prerequisite_module_ids or []):
+                    edges.append(ModuleDependencyEdge(
+                        from_module_id=prereq_id,
+                        to_module_id=m.module_id,
+                    ))
+
+        return ModuleDependencyGraphResponse(
+            course_id=course.course_id,
+            module_unlock_mode=course.module_unlock_mode,
+            nodes=nodes,
+            edges=edges,
         )
     except Exception as exc:
         raise _handle_domain_error(exc) from exc

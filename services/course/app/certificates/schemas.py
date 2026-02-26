@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import CertificateType
+
 
 # ---------------------------------------------------------------------------
 # Request schemas
@@ -23,6 +25,18 @@ class GenerateCertificateRequest(BaseModel):
         min_length=1,
         max_length=200,
         description="Full name of the certificate recipient (as it should appear on the PDF).",
+    )
+
+
+class GenerateModuleCertificateRequest(BaseModel):
+    """Request body for module-level certificate generation."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    recipient_name: str = Field(
+        min_length=1,
+        max_length=200,
+        description="Full name of the certificate recipient.",
     )
 
 
@@ -48,6 +62,10 @@ class CertificateResponse(BaseModel):
     instructor_name: str
     total_hours: Decimal | None = None
     score: int | None = None
+    module_id: UUID | None = None
+    certificate_type: CertificateType = CertificateType.COURSE
+    module_title: str | None = None
+    template_used: str | None = None
     verification_url: str | None = Field(
         default=None,
         description="Full URL for QR-based verification.",
@@ -67,3 +85,14 @@ class CertificateVerifyResponse(BaseModel):
     total_hours: Decimal | None = None
     score: int | None = None
     issued_at: datetime | None = None
+    module_id: UUID | None = None
+    certificate_type: CertificateType | None = None
+    module_title: str | None = None
+
+
+class CertificatePreviewResponse(BaseModel):
+    """Preview URL for a certificate template."""
+
+    preview_url: str
+    cert_template: str | None = None
+    cert_title: str | None = None

@@ -13,12 +13,16 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import (
+    CertificationMode,
+    CompletionMode,
     CourseStatus,
     CourseVisibility,
     EnrollmentStatus,
     LessonProgressStatus,
     LessonType,
+    ModuleUnlockMode,
     PricingType,
+    ScormImportStatus,
 )
 
 
@@ -107,6 +111,42 @@ class CreateCourseRequest(BaseModel):
         max_length=500,
         description="S3 URL for SCORM 1.2/2004 package.",
     )
+    # V2 setup features
+    custom_metadata: list[dict] | None = Field(
+        default=None,
+        description="Custom metadata fields: [{field_name, field_type, label, options, required, value}].",
+    )
+    self_registration_enabled: bool = Field(default=True)
+    approval_required: bool = Field(default=False)
+    access_code: str | None = Field(default=None, max_length=50, description="Institutional passcode.")
+    discount_pct: Decimal | None = Field(default=None, ge=0, le=100, description="Direct discount %.")
+    certificate_price: Decimal | None = Field(
+        default=None, ge=0,
+        description="Certificate price for FREE_PLUS_CERTIFICATE courses.",
+    )
+    registration_questions: list[dict] | None = Field(
+        default=None,
+        description="Custom registration questions: [{question_id, question_text, question_type, options, required}].",
+    )
+    eligibility_rules: dict | None = Field(
+        default=None,
+        description="Eligibility rules: {min_experience_years, required_specialties, required_role, custom_rules}.",
+    )
+    # Completion & certification
+    completion_mode: CompletionMode = Field(
+        default=CompletionMode.DEFAULT,
+        description="DEFAULT auto-fills completion_logic; CUSTOM uses the provided values.",
+    )
+    module_unlock_mode: ModuleUnlockMode = Field(
+        default=ModuleUnlockMode.ALL_UNLOCKED,
+        description="How modules become accessible to students.",
+    )
+    certification_mode: CertificationMode = Field(
+        default=CertificationMode.COURSE,
+        description="What certificates are generated on completion.",
+    )
+    cert_template: str | None = Field(default=None, max_length=100, description="Certificate template name.")
+    cert_custom_title: str | None = Field(default=None, max_length=300, description="Custom certificate title.")
 
     @field_validator("price")
     @classmethod
@@ -114,6 +154,14 @@ class CreateCourseRequest(BaseModel):
         pricing_type = info.data.get("pricing_type")
         if pricing_type == PricingType.PAID and (v is None or v <= 0):
             raise ValueError("PAID courses must have a price greater than 0.")
+        return v
+
+    @field_validator("certificate_price")
+    @classmethod
+    def _validate_certificate_price(cls, v: Decimal | None, info) -> Decimal | None:
+        pricing_type = info.data.get("pricing_type")
+        if pricing_type == PricingType.FREE_PLUS_CERTIFICATE and (v is None or v <= 0):
+            raise ValueError("FREE_PLUS_CERTIFICATE courses must have a certificate_price > 0.")
         return v
 
 
@@ -138,6 +186,21 @@ class UpdateCourseRequest(BaseModel):
     status: CourseStatus | None = Field(default=None)
     visibility: CourseVisibility | None = Field(default=None)
     scorm_package_url: str | None = Field(default=None, max_length=500)
+    # V2 setup features (all optional for update)
+    custom_metadata: list[dict] | None = Field(default=None)
+    self_registration_enabled: bool | None = Field(default=None)
+    approval_required: bool | None = Field(default=None)
+    access_code: str | None = Field(default=None, max_length=50)
+    discount_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    certificate_price: Decimal | None = Field(default=None, ge=0)
+    registration_questions: list[dict] | None = Field(default=None)
+    eligibility_rules: dict | None = Field(default=None)
+    # Completion & certification
+    completion_mode: CompletionMode | None = Field(default=None)
+    module_unlock_mode: ModuleUnlockMode | None = Field(default=None)
+    certification_mode: CertificationMode | None = Field(default=None)
+    cert_template: str | None = Field(default=None, max_length=100)
+    cert_custom_title: str | None = Field(default=None, max_length=300)
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +215,13 @@ class CreateModuleRequest(BaseModel):
 
     title: str = Field(min_length=1, max_length=300, description="Module title.")
     sort_order: int = Field(ge=0, description="Display order within the course.")
+    prerequisite_module_ids: list[UUID] | None = Field(
+        default=None, description="Module IDs that must be completed before this module unlocks (CUSTOM mode).",
+    )
+    is_required: bool = Field(default=True, description="Whether module counts toward course completion.")
+    cert_enabled: bool = Field(default=False, description="Whether module completion issues a certificate.")
+    cert_template: str | None = Field(default=None, max_length=100)
+    cert_custom_title: str | None = Field(default=None, max_length=300)
 
 
 class UpdateModuleRequest(BaseModel):
@@ -161,6 +231,11 @@ class UpdateModuleRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=300)
     sort_order: int | None = Field(default=None, ge=0)
+    prerequisite_module_ids: list[UUID] | None = Field(default=None)
+    is_required: bool | None = Field(default=None)
+    cert_enabled: bool | None = Field(default=None)
+    cert_template: str | None = Field(default=None, max_length=100)
+    cert_custom_title: str | None = Field(default=None, max_length=300)
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +249,9 @@ class CreateLessonRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     title: str = Field(min_length=1, max_length=300, description="Lesson title.")
-    lesson_type: LessonType = Field(description="VIDEO, PDF, TEXT, QUIZ, or SCORM.")
+    lesson_type: LessonType = Field(
+        description="VIDEO, PDF, TEXT, QUIZ, SCORM, PRESENTATION, SURVEY, or ASSESSMENT.",
+    )
     content_url: str | None = Field(
         default=None,
         max_length=500,
@@ -194,6 +271,11 @@ class CreateLessonRequest(BaseModel):
         default=False,
         description="Whether this lesson is available as a free preview.",
     )
+    # V2 build features
+    slide_count: int | None = Field(default=None, ge=1, description="Number of slides for PRESENTATION type.")
+    is_required: bool = Field(default=False, description="Whether this lesson must be completed to proceed.")
+    is_gated: bool = Field(default=False, description="Whether previous lessons must be completed first.")
+    gate_passing_score: int | None = Field(default=None, ge=0, le=100, description="Min score to unlock next.")
 
 
 class UpdateLessonRequest(BaseModel):
@@ -208,6 +290,10 @@ class UpdateLessonRequest(BaseModel):
     duration_mins: int | None = Field(default=None, ge=0)
     sort_order: int | None = Field(default=None, ge=0)
     is_preview: bool | None = Field(default=None)
+    slide_count: int | None = Field(default=None, ge=1)
+    is_required: bool | None = Field(default=None)
+    is_gated: bool | None = Field(default=None)
+    gate_passing_score: int | None = Field(default=None, ge=0, le=100)
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +309,11 @@ class CreateEnrollmentRequest(BaseModel):
     payment_id: UUID | None = Field(
         default=None,
         description="Payment record ID. Required for PAID courses, null for FREE.",
+    )
+    access_code: str | None = Field(default=None, max_length=50, description="Institutional access code.")
+    promo_code: str | None = Field(default=None, max_length=50, description="Promo code for discount.")
+    registration_answers: list[dict] | None = Field(
+        default=None, description="Answers to custom registration questions.",
     )
 
 
@@ -299,6 +390,21 @@ class CourseResponse(BaseModel):
     status: CourseStatus
     visibility: CourseVisibility
     scorm_package_url: str | None
+    custom_metadata: list[dict] | None = None
+    self_registration_enabled: bool = True
+    approval_required: bool = False
+    access_code: str | None = None
+    discount_pct: Decimal | None = None
+    certificate_price: Decimal | None = None
+    registration_questions: list[dict] | None = None
+    eligibility_rules: dict | None = None
+    scorm_import_status: ScormImportStatus | None = None
+    scorm_import_error: str | None = None
+    completion_mode: CompletionMode = CompletionMode.DEFAULT
+    module_unlock_mode: ModuleUnlockMode = ModuleUnlockMode.ALL_UNLOCKED
+    certification_mode: CertificationMode = CertificationMode.COURSE
+    cert_template: str | None = None
+    cert_custom_title: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -345,6 +451,11 @@ class ModuleResponse(BaseModel):
     course_id: UUID
     title: str
     sort_order: int
+    prerequisite_module_ids: list[UUID] | None = None
+    is_required: bool = True
+    cert_enabled: bool = False
+    cert_template: str | None = None
+    cert_custom_title: str | None = None
     created_at: datetime
 
 
@@ -362,6 +473,10 @@ class LessonResponse(BaseModel):
     duration_mins: int | None
     sort_order: int
     is_preview: bool
+    slide_count: int | None = None
+    is_required: bool = False
+    is_gated: bool = False
+    gate_passing_score: int | None = None
     created_at: datetime
 
 
@@ -374,6 +489,11 @@ class ModuleWithLessonsResponse(BaseModel):
     course_id: UUID
     title: str
     sort_order: int
+    prerequisite_module_ids: list[UUID] | None = None
+    is_required: bool = True
+    cert_enabled: bool = False
+    cert_template: str | None = None
+    cert_custom_title: str | None = None
     lessons: list[LessonResponse] = Field(default_factory=list)
     created_at: datetime
 
@@ -399,6 +519,13 @@ class EnrollmentResponse(BaseModel):
     completed_at: datetime | None
     last_lesson_id: UUID | None
     last_position_secs: int | None
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
+    access_code_used: str | None = None
+    promo_code_id: UUID | None = None
+    discount_applied_pct: Decimal | None = None
+    final_price: Decimal | None = None
+    registration_answers: list[dict] | None = None
     created_at: datetime
 
 
@@ -422,3 +549,100 @@ class EnrollmentDetailResponse(BaseModel):
 
     enrollment: EnrollmentResponse
     lesson_progress: list[LessonProgressResponse] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# V2 Feature schemas: Instructor, Promo codes, Timeline
+# ---------------------------------------------------------------------------
+
+
+class CourseInstructorRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    instructor_id: UUID
+    instructor_name: str = Field(min_length=1, max_length=200)
+    instructor_bio: str | None = None
+    role: str = Field(default="co_instructor", max_length=50)
+
+
+class CourseInstructorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    course_id: UUID
+    instructor_id: UUID
+    instructor_name: str
+    instructor_bio: str | None
+    role: str
+    sort_order: int
+    added_at: datetime
+
+
+class CreatePromoCodeRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(min_length=1, max_length=50)
+    discount_pct: Decimal = Field(ge=1, le=100)
+    max_uses: int | None = Field(default=None, ge=1)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+
+
+class PromoCodeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    promo_code_id: UUID
+    course_id: UUID
+    code: str
+    discount_pct: Decimal
+    max_uses: int | None
+    current_uses: int
+    valid_from: datetime | None
+    valid_until: datetime | None
+    is_active: bool
+    created_at: datetime
+
+
+class CourseTimelineItem(BaseModel):
+    global_index: int
+    module_id: UUID
+    module_title: str
+    module_sort_order: int
+    lesson_id: UUID
+    lesson_title: str
+    lesson_type: LessonType
+    lesson_sort_order: int
+    duration_mins: int | None
+    is_preview: bool
+    is_gated: bool
+    is_required: bool
+
+
+class CourseTimelineResponse(BaseModel):
+    course_id: UUID
+    total_items: int
+    timeline: list[CourseTimelineItem]
+
+
+# ---------------------------------------------------------------------------
+# Module dependency graph
+# ---------------------------------------------------------------------------
+
+
+class ModuleDependencyNode(BaseModel):
+    module_id: UUID
+    title: str
+    sort_order: int
+    is_required: bool
+
+
+class ModuleDependencyEdge(BaseModel):
+    from_module_id: UUID
+    to_module_id: UUID
+
+
+class ModuleDependencyGraphResponse(BaseModel):
+    course_id: UUID
+    module_unlock_mode: ModuleUnlockMode
+    nodes: list[ModuleDependencyNode]
+    edges: list[ModuleDependencyEdge]

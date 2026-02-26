@@ -219,11 +219,11 @@ async def submit_attempt(
     quiz_id: UUID,
     user_id: UUID,
     *,
-    answers: list[int | list[int]],
+    answers: list[int | list[int] | str],
     time_taken_secs: int | None = None,
     redis: Redis | None = None,
 ) -> dict:
-    """Score a quiz attempt (MCQ + MSQ), store QuizAttempt, update progress.
+    """Score a quiz attempt (MCQ, MSQ, TRUE_FALSE, SHORT_ANSWER).
 
     Returns dict with quiz_id, score, passed, correct_count, total_questions,
     attempt_number, time_taken_secs, answers_review.
@@ -271,6 +271,18 @@ async def submit_attempt(
             user_answer = answers[i]
             user_set = set(user_answer) if isinstance(user_answer, list) else {user_answer}
             if user_set == correct_set:
+                correct_count += 1
+        elif q_type == QuestionType.TRUE_FALSE.value:
+            correct_idx = q.get("correct_index")
+            user_answer = answers[i]
+            if isinstance(user_answer, list):
+                user_answer = user_answer[0] if user_answer else None
+            if user_answer == correct_idx:
+                correct_count += 1
+        elif q_type == QuestionType.SHORT_ANSWER.value:
+            correct_text = (q.get("correct_text") or "").strip().lower()
+            user_answer = str(answers[i]).strip().lower() if answers[i] is not None else ""
+            if user_answer == correct_text:
                 correct_count += 1
         else:
             # MCQ: single index match
@@ -385,7 +397,7 @@ async def get_my_attempts(
 
 def _build_answers_review(
     quiz: Quiz,
-    user_answers: list[int | list[int]],
+    user_answers: list[int | list[int] | str],
     passed: bool,
 ) -> list[dict] | None:
     """Build per-question review based on show_answers policy."""
@@ -405,6 +417,10 @@ def _build_answers_review(
         }
         if q_type == QuestionType.MSQ.value:
             item["correct_indices"] = q.get("correct_indices", [])
+        elif q_type == QuestionType.SHORT_ANSWER.value:
+            item["correct_text"] = q.get("correct_text")
+        elif q_type == QuestionType.TRUE_FALSE.value:
+            item["correct_index"] = q.get("correct_index")
         else:
             item["correct_index"] = q.get("correct_index")
         item["explanation"] = q.get("explanation")

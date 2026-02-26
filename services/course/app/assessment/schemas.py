@@ -45,14 +45,17 @@ class QuizQuestion(BaseModel):
     image_url: str | None = Field(
         default=None, max_length=500, description="Question image URL.",
     )
-    options: list[QuestionOption] = Field(
-        min_length=2, max_length=10, description="Answer choices (2-10).",
+    options: list[QuestionOption] | None = Field(
+        default=None, max_length=10, description="Answer choices (2-10). Required for MCQ/MSQ/TRUE_FALSE.",
     )
     correct_index: int | None = Field(
-        default=None, ge=0, description="0-based index of the correct option (MCQ).",
+        default=None, ge=0, description="0-based index of the correct option (MCQ/TRUE_FALSE).",
     )
     correct_indices: list[int] | None = Field(
         default=None, description="0-based indices of correct options (MSQ).",
+    )
+    correct_text: str | None = Field(
+        default=None, description="Expected answer text for SHORT_ANSWER questions.",
     )
     explanation: str | None = Field(
         default=None, description="Explanation shown after answering.",
@@ -61,15 +64,27 @@ class QuizQuestion(BaseModel):
     @model_validator(mode="after")
     def _validate_correct_answer(self) -> QuizQuestion:
         if self.question_type == QuestionType.MCQ:
+            if not self.options or len(self.options) < 2:
+                raise ValueError("MCQ requires at least 2 options.")
             if self.correct_index is None:
                 raise ValueError("MCQ requires correct_index.")
             if self.correct_index >= len(self.options):
                 raise ValueError("correct_index out of range.")
         elif self.question_type == QuestionType.MSQ:
+            if not self.options or len(self.options) < 2:
+                raise ValueError("MSQ requires at least 2 options.")
             if not self.correct_indices:
                 raise ValueError("MSQ requires correct_indices.")
             if any(i >= len(self.options) for i in self.correct_indices):
                 raise ValueError("correct_indices contain out-of-range index.")
+        elif self.question_type == QuestionType.TRUE_FALSE:
+            if self.correct_index is None:
+                raise ValueError("TRUE_FALSE requires correct_index (0=True, 1=False).")
+            if self.correct_index not in (0, 1):
+                raise ValueError("TRUE_FALSE correct_index must be 0 (True) or 1 (False).")
+        elif self.question_type == QuestionType.SHORT_ANSWER:
+            if not self.correct_text:
+                raise ValueError("SHORT_ANSWER requires correct_text.")
         return self
 
 
@@ -133,8 +148,8 @@ class QuizAttemptRequest(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    answers: list[int | list[int]] = Field(
-        description="Per question: int for MCQ, list[int] for MSQ.",
+    answers: list[int | list[int] | str] = Field(
+        description="Per question: int for MCQ/TRUE_FALSE, list[int] for MSQ, str for SHORT_ANSWER.",
     )
     time_taken_secs: int | None = Field(
         default=None, ge=0, description="Client-reported time taken in seconds.",

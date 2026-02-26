@@ -112,3 +112,71 @@ class QuizTimeLimitExceededError(Exception):
 
 class CloudFrontSigningError(Exception):
     """Raised when CloudFront URL signing fails (missing key, config error)."""
+
+
+class SelfRegistrationDisabledError(Exception):
+    """Raised when self-registration is disabled for a course."""
+
+
+class InvalidAccessCodeError(Exception):
+    """Raised when the provided access code does not match."""
+
+
+class InvalidPromoCodeError(Exception):
+    """Raised when a promo code is invalid, expired, or exhausted."""
+
+
+class LessonGatedError(Exception):
+    """Raised when user tries to access a gated lesson without completing prerequisites."""
+
+    def __init__(self, lesson_id: str = ""):
+        self.lesson_id = lesson_id
+        super().__init__(f"Complete previous lessons to unlock this content: {lesson_id}")
+
+
+class EnrollmentPendingApprovalError(Exception):
+    """Raised when enrollment is pending instructor approval."""
+
+
+class SurveyNotFoundError(Exception):
+    def __init__(self, survey_id: str = ""):
+        self.survey_id = survey_id
+        super().__init__(f"Survey not found: {survey_id}")
+
+
+class SurveyAlreadyRespondedError(Exception):
+    """Raised when user has already submitted a response for this survey."""
+
+
+class ScormImportError(Exception):
+    """Raised when SCORM package import fails."""
+
+
+class PromoCodeNotFoundError(Exception):
+    def __init__(self, identifier: str = ""):
+        self.identifier = identifier
+        super().__init__(f"Promo code not found: {identifier}")
+
+
+class ModuleLockedError(Exception):
+    """Raised when user tries to access a module that is locked by prerequisites."""
+
+    def __init__(self, module_id: str = ""):
+        self.module_id = module_id
+        super().__init__(f"Module is locked: {module_id}")
+
+
+class ModuleCertificateAlreadyIssuedError(Exception):
+    """Raised when a module certificate has already been issued for this enrollment."""
+
+
+class CertificationDisabledError(Exception):
+    """Raised when certification is disabled for this course or module."""
+
+
+class InvalidDependencyGraphError(Exception):
+    """Raised when module dependency graph contains a cycle or invalid references."""
+
+    def __init__(self, detail: str = ""):
+        self.detail = detail
+        super().__init__(f"Invalid dependency graph: {detail}")

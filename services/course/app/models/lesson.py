@@ -35,12 +35,18 @@ class Lesson(Base):
     # SCORM fields
     scorm_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     scorm_entry_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # V2 Build features
+    slide_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_gated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    gate_passing_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     module = relationship("CourseModule", back_populates="lessons", lazy="select")
     quiz = relationship("Quiz", back_populates="lesson", uselist=False, lazy="noload")
+    survey = relationship("Survey", lazy="noload", uselist=False)
 
     __table_args__ = (
         Index("ix_lessons_module_id", "module_id"),

@@ -29,6 +29,8 @@ class CertificatePDFData:
     score: int | None
     verification_code: str
     verification_url: str
+    module_title: str | None = None
+    template: str | None = None
 
 
 def _generate_qr_image(url: str) -> io.BytesIO:
@@ -85,7 +87,8 @@ def generate_certificate_pdf(data: CertificatePDFData) -> bytes:
     # --- Title ---
     c.setFillColor(colors.HexColor("#111827"))
     c.setFont("Helvetica-Bold", 22)
-    c.drawCentredString(center_x, page_h - 6 * cm, "Certificate of Completion")
+    cert_heading = "Module Certificate" if data.module_title else "Certificate of Completion"
+    c.drawCentredString(center_x, page_h - 6 * cm, cert_heading)
 
     # --- Subtitle ---
     c.setFillColor(colors.HexColor("#6b7280"))
@@ -109,16 +112,29 @@ def generate_certificate_pdf(data: CertificatePDFData) -> bytes:
     # --- "has successfully completed" ---
     c.setFillColor(colors.HexColor("#6b7280"))
     c.setFont("Helvetica", 12)
-    c.drawCentredString(center_x, page_h - 9.2 * cm, "has successfully completed the course")
+    completion_text = (
+        f"has successfully completed the module"
+        if data.module_title
+        else "has successfully completed the course"
+    )
+    c.drawCentredString(center_x, page_h - 9.2 * cm, completion_text)
 
-    # --- Course title ---
+    # --- Course/Module title ---
     c.setFillColor(colors.HexColor("#111827"))
     c.setFont("Helvetica-Bold", 18)
-    # Truncate long titles
     title = data.course_title
     if len(title) > 60:
         title = title[:57] + "..."
     c.drawCentredString(center_x, page_h - 10.2 * cm, title)
+
+    # --- Module title (below course title) ---
+    if data.module_title:
+        c.setFillColor(colors.HexColor("#4b5563"))
+        c.setFont("Helvetica-Bold", 14)
+        mod_title = data.module_title
+        if len(mod_title) > 60:
+            mod_title = mod_title[:57] + "..."
+        c.drawCentredString(center_x, page_h - 10.9 * cm, f"Module: {mod_title}")
 
     # --- Details line (instructor, hours, score) ---
     details_parts = []
