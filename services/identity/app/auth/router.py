@@ -578,9 +578,8 @@ async def delete_user_route(
     if redis_keys_to_delete:
         await redis.delete(*redis_keys_to_delete)
 
-    # Finally delete the user
+    # Finally delete the user (get_db commits at request end)
     await session.delete(user)
-    await session.commit()
 
     identifier = body.email or body.phone_number
     return MessageResponse(

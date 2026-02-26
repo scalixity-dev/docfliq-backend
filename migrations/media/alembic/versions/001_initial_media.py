@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ENUM, UUID
 
 # revision identifiers, used by Alembic.
 revision: str = "001_initial_media"
@@ -19,18 +19,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    asset_type = sa.Enum(
-        "VIDEO", "IMAGE", "PDF", "SCORM",
-        name="assettype",
-    )
-    transcode_status = sa.Enum(
-        "PENDING", "PROCESSING", "COMPLETED", "FAILED",
-        name="transcodestatus",
-    )
+    # Create enum types via raw SQL (idempotent)
+    op.execute("DO $$ BEGIN CREATE TYPE assettype AS ENUM ('VIDEO','IMAGE','PDF','SCORM'); EXCEPTION WHEN duplicate_object THEN NULL; END $$")
+    op.execute("DO $$ BEGIN CREATE TYPE transcodestatus AS ENUM ('PENDING','PROCESSING','COMPLETED','FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$")
 
-    asset_type.create(op.get_bind(), checkfirst=True)
-    transcode_status.create(op.get_bind(), checkfirst=True)
+    # Reference existing enums (create_type=False prevents auto-creation during create_table)
+    asset_type = ENUM("VIDEO", "IMAGE", "PDF", "SCORM", name="assettype", create_type=False)
+    transcode_status = ENUM("PENDING", "PROCESSING", "COMPLETED", "FAILED", name="transcodestatus", create_type=False)
 
     op.create_table(
         "media_assets",

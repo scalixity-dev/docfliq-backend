@@ -35,16 +35,16 @@ class Settings(BaseSettings):
     # S3 presigned URL expiry
     s3_upload_expiry_seconds: int = 900  # 15 min for PUT uploads
 
-    # MediaConvert
-    mediaconvert_endpoint: str = ""
-    mediaconvert_role_arn: str = ""
-    mediaconvert_queue_arn: str = ""
-    mediaconvert_output_bucket: str = ""
+    # MediaConvert — unused (in-service processing), kept for future use
+    # mediaconvert_endpoint: str = ""
+    # mediaconvert_role_arn: str = ""
+    # mediaconvert_queue_arn: str = ""
+    # mediaconvert_output_bucket: str = ""
 
-    # CloudFront
-    cloudfront_domain: str = ""
-    cloudfront_key_pair_id: str = ""
-    cloudfront_private_key: str = ""  # PEM string or path
+    # CloudFront — unused (S3 presigned URLs used instead), kept for future use
+    # cloudfront_domain: str = ""
+    # cloudfront_key_pair_id: str = ""
+    # cloudfront_private_key: str = ""
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     env_name: str = "development"

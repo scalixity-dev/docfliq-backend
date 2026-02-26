@@ -42,28 +42,6 @@ class ConfirmUploadRequest(_Base):
     asset_id: uuid.UUID = Field(description="Asset ID returned from the upload request")
 
 
-class TranscodeCallbackRequest(_Base):
-    """Callback from Lambda when transcoding is complete or failed."""
-    mediaconvert_job_id: str = Field(min_length=1, max_length=100)
-    status: TranscodeStatus = Field(description="COMPLETED or FAILED")
-    processed_url: str | None = Field(default=None, max_length=500)
-    hls_url: str | None = Field(default=None, max_length=500)
-    thumbnail_url: str | None = Field(default=None, max_length=500)
-    duration_secs: int | None = Field(default=None, ge=0)
-    resolution: str | None = Field(default=None, max_length=20)
-    error_message: str | None = Field(default=None, max_length=1000)
-
-
-class ImageProcessCallbackRequest(_Base):
-    """Callback from Lambda when image processing is complete."""
-    asset_id: uuid.UUID
-    processed_url: str | None = Field(default=None, max_length=500)
-    thumbnail_url: str | None = Field(default=None, max_length=500)
-    file_size_bytes: int | None = Field(default=None, ge=0)
-    status: TranscodeStatus = Field(description="COMPLETED or FAILED")
-    error_message: str | None = Field(default=None, max_length=1000)
-
-
 # ── Responses ────────────────────────────────────────────────────────────────
 
 class UploadResponse(_Base):

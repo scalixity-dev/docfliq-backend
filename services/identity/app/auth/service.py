@@ -94,21 +94,25 @@ async def generate_unique_username(session: AsyncSession, full_name: str) -> str
     """
     Generate a unique username from the full name.
 
-    Strategy: slugify the name, then check DB. If taken, append random digits
-    until a unique one is found.
+    Strategy: slugify the name, generate candidates upfront, check them all
+    in a single DB query, and return the first available one.
     """
     base = _slugify_name(full_name)[:40]  # leave room for suffix
-    # Try the clean slug first
-    candidate = base
+    # Build candidate list: clean slug + 10 suffixed variants
+    candidates = [base]
     for _ in range(10):
-        result = await session.execute(
-            select(User.id).where(User.username == candidate).limit(1)
-        )
-        if result.scalar_one_or_none() is None:
-            return candidate
-        # Append random digits
         suffix = "".join(random.choices(string.digits, k=4))
-        candidate = f"{base}{suffix}"
+        candidates.append(f"{base}{suffix}")
+
+    # Single query: find which candidates are already taken
+    result = await session.execute(
+        select(User.username).where(User.username.in_(candidates))
+    )
+    taken = set(result.scalars().all())
+
+    for candidate in candidates:
+        if candidate not in taken:
+            return candidate
     # Extremely unlikely fallback — uuid fragment
     return f"{base}{uuid.uuid4().hex[:8]}"
 

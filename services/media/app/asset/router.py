@@ -2,11 +2,10 @@
 Media asset — HTTP routes.
 
 All user-facing endpoints require JWT auth (Bearer token from MS-1).
-Lambda callback endpoints use an internal API key for authentication.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.asset import controller
@@ -15,10 +14,8 @@ from app.asset.schemas import (
     AssetListResponse,
     AssetResponse,
     ConfirmUploadRequest,
-    ImageProcessCallbackRequest,
     MessageResponse,
     SignedUrlResponse,
-    TranscodeCallbackRequest,
     UploadRequest,
     UploadResponse,
 )
@@ -27,7 +24,6 @@ from app.database import get_db
 from shared.models.user import CurrentUser
 
 router = APIRouter(prefix="/media", tags=["media"])
-callback_router = APIRouter(prefix="/internal/media", tags=["internal"])
 
 
 def _get_settings() -> Settings:
@@ -67,11 +63,12 @@ async def request_upload(
 )
 async def confirm_upload(
     request: ConfirmUploadRequest,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(_get_settings),
 ) -> AssetResponse:
-    return await controller.confirm_upload(request, user, db, settings)
+    return await controller.confirm_upload(request, user, db, settings, background_tasks)
 
 
 # ── Asset CRUD ───────────────────────────────────────────────────────────────
@@ -140,31 +137,3 @@ async def get_signed_url(
     return await controller.get_signed_url(
         asset_id, user, db, settings, expiry_seconds=expiry,
     )
-
-
-# ── Lambda callbacks (internal) ─────────────────────────────────────────────
-
-@callback_router.post(
-    "/callback/transcode",
-    response_model=MessageResponse,
-    summary="Video transcode callback",
-    description="Called by the video transcode Lambda when a job completes or fails.",
-)
-async def transcode_callback(
-    request: TranscodeCallbackRequest,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    return await controller.transcode_callback(request, db)
-
-
-@callback_router.post(
-    "/callback/image",
-    response_model=MessageResponse,
-    summary="Image processing callback",
-    description="Called by the image processing Lambda when processing completes.",
-)
-async def image_process_callback(
-    request: ImageProcessCallbackRequest,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    return await controller.image_process_callback(request, db)

@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
-from app.exceptions import UserNotFound
+from app.exceptions import UserHiddenByBlock, UserNotFound
 
 
 async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> User:
@@ -18,6 +18,36 @@ async def get_profile(session: AsyncSession, user_id: uuid.UUID) -> User:
     user = result.scalar_one_or_none()
     if user is None:
         raise UserNotFound()
+    return user
+
+
+async def get_profile_for_viewer(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    viewer_id: uuid.UUID,
+) -> User:
+    """Load a user by PK and verify they haven't blocked the viewer.
+
+    Single query instead of separate block-check + profile-load.
+    Raises UserNotFound (404) or UserHiddenByBlock (404).
+    """
+    from app.social_graph.models import Block
+
+    blocked_sq = sa.exists(
+        sa.select(Block.id).where(
+            Block.blocker_id == user_id,
+            Block.blocked_id == viewer_id,
+        )
+    )
+    result = await session.execute(
+        sa.select(User, blocked_sq).where(User.id == user_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise UserNotFound()
+    user, is_blocked = row.tuple()
+    if is_blocked:
+        raise UserHiddenByBlock()
     return user
 
 

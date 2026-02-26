@@ -11,7 +11,6 @@ from app.config import Settings
 from app.database import init_db
 from app.rate_limit import limiter
 from app.asset.router import router as asset_router
-from app.asset.router import callback_router
 from shared.middleware.request_id import request_id_middleware
 from shared.middleware.error_handler import error_envelope_middleware
 
@@ -21,25 +20,21 @@ from shared.middleware.error_handler import error_envelope_middleware
 _DESCRIPTION = """
 ## Docfliq Media Processing Service (MS-5)
 
-Event-driven media processing for the Docfliq platform.
+S3-based media management for the Docfliq platform.
 
 * **Upload** — presigned S3 PUT URLs for direct file uploads (video, image, PDF, SCORM).
-* **Video transcoding** — AWS MediaConvert produces HLS (720p + 1080p + 4K) + MP4 download.
-* **Image processing** — Lambda + Pillow: resize, compress, WebP conversion,
+* **Image processing** — in-service Pillow processing: resize, compress, WebP conversion,
   thumbnail generation (150x150, 600x600, 1200x1200), avatar crops, course thumbnails.
-* **Secure URLs** — CloudFront signed URLs for paid content; S3 presigned URLs for uploads.
-* **Status tracking** — real-time transcode status (PENDING → PROCESSING → COMPLETED/FAILED).
+* **Video storage** — original MP4 served directly via S3 presigned URLs.
+* **Secure URLs** — S3 presigned URLs for time-limited content access.
+* **Status tracking** — transcode status (PENDING → PROCESSING → COMPLETED/FAILED).
 
 ### Authentication
-All user-facing endpoints require:
+All endpoints require:
 ```
 Authorization: Bearer <access_token>
 ```
 Tokens are issued by the Identity service (MS-1).
-
-### Internal callbacks
-Lambda functions call `/api/v1/internal/media/callback/*` endpoints
-to report processing results.
 
 ### Error shape
 All errors return a consistent JSON envelope:
@@ -54,13 +49,6 @@ _TAGS_METADATA = [
         "description": (
             "Upload media files, manage assets, and generate signed URLs "
             "for secure content delivery."
-        ),
-    },
-    {
-        "name": "internal",
-        "description": (
-            "Internal endpoints called by Lambda functions to report "
-            "processing results. Not for external use."
         ),
     },
 ]
@@ -123,7 +111,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(asset_router, prefix="/api/v1")
-    app.include_router(callback_router, prefix="/api/v1")
 
     @app.get("/health", response_model=HealthResponse, tags=["health"], include_in_schema=True)
     async def health() -> HealthResponse:
