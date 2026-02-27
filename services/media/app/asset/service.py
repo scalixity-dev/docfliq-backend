@@ -37,6 +37,7 @@ async def create_asset(
     )
     db.add(asset)
     await db.flush()
+    await db.refresh(asset)
     return asset
 
 
@@ -172,16 +173,57 @@ async def confirm_upload(
         return None
 
     asset.file_size_bytes = file_size_bytes
-    # For images, processing is fast — mark as PROCESSING
-    # For videos, Lambda will pick it up and set PROCESSING
     if asset.asset_type == AssetType.IMAGE:
+        # Images processed in-service via Pillow background task
+        asset.transcode_status = TranscodeStatus.PROCESSING
+    elif asset.asset_type == AssetType.VIDEO:
+        # Video transcoding via MediaConvert (background task submits job)
         asset.transcode_status = TranscodeStatus.PROCESSING
     elif asset.asset_type in (AssetType.PDF, AssetType.SCORM):
-        # PDFs and SCORM packages don't need transcoding
+        # No processing needed
         asset.transcode_status = TranscodeStatus.COMPLETED
 
     await db.flush()
+    await db.refresh(asset)
     return asset
+
+
+# ── In-service image processing (pure CPU, zero FastAPI imports) ──────────────
+
+def process_image_sync(
+    image_data: bytes,
+    *,
+    is_avatar: bool = False,
+    is_course_thumbnail: bool = False,
+) -> dict[str, bytes]:
+    """
+    Process an image into multiple sizes using Pillow.
+
+    Synchronous/CPU-bound — callers in async context must offload to a
+    thread executor via ``asyncio.get_event_loop().run_in_executor(None, ...)``.
+
+    Returns {size_name: webp_bytes}.
+    """
+    from app.asset.image_processor import ImageProcessor
+
+    processor = ImageProcessor(image_data)
+    return processor.process(
+        is_avatar=is_avatar,
+        is_course_thumbnail=is_course_thumbnail,
+    )
+
+
+def build_processed_key(original_s3_key: str, size_name: str) -> str:
+    """
+    Derive the S3 key for a processed image variant.
+
+    Input:  uploads/image/{user_id}/20260226_abc12345.jpg
+    Output: processed/image/{user_id}/20260226_abc12345/thumbnail.webp
+    """
+    output_prefix = original_s3_key.replace("uploads/image/", "processed/image/")
+    if "." in output_prefix:
+        output_prefix = output_prefix.rsplit(".", 1)[0]
+    return f"{output_prefix}/{size_name}.webp"
 
 
 async def delete_asset(

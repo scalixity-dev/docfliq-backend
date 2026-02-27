@@ -497,6 +497,7 @@ async def change_password(
 async def delete_user_route(
     body: DeleteUserRequest,
     session: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(_get_redis),
 ) -> MessageResponse:
     from app.auth.service import get_user_by_email, get_user_by_phone
     from app.auth.models import AuthSession, OTPRequest, PasswordResetToken
@@ -517,12 +518,12 @@ async def delete_user_route(
 
     # Cascade delete all related data manually to ensure complete removal
     user_id = user.id
-    
+
     # Delete auth sessions
     await session.execute(
         delete(AuthSession).where(AuthSession.user_id == user_id)
     )
-    
+
     # Delete social graph relationships (follows, blocks, mutes where user is either party)
     from app.social_graph.models import Follow, Block, Mute
     await session.execute(
@@ -534,35 +535,52 @@ async def delete_user_route(
     await session.execute(
         delete(Mute).where((Mute.muter_id == user_id) | (Mute.muted_id == user_id))
     )
-    
+
     # Delete reports made by user
     from app.social_graph.models import Report
     await session.execute(
         delete(Report).where(Report.reporter_id == user_id)
     )
-    
+
     # Delete verification documents
     from app.verification.models import UserVerification
     await session.execute(
         delete(UserVerification).where(UserVerification.user_id == user_id)
     )
-    
+
     # Delete OTP requests (only if user has a phone number)
     if user.phone_number:
         await session.execute(
             delete(OTPRequest).where(OTPRequest.phone_number == user.phone_number)
         )
-    
+
     # Delete password reset tokens (only if user has an email)
     if user.email:
         await session.execute(
             delete(PasswordResetToken).where(PasswordResetToken.email == user.email)
         )
-    
-    # Finally delete the user
+
+    # Clean up Redis keys (OTPs, login locks, email verification)
+    redis_keys_to_delete = []
+    if user.phone_number:
+        redis_keys_to_delete.extend([
+            f"otp:{user.phone_number}",
+            f"otp_tries:{user.phone_number}",
+        ])
+    if user.email:
+        email_lower = user.email.lower()
+        redis_keys_to_delete.extend([
+            f"email_otp:{email_lower}",
+            f"email_otp_tries:{email_lower}",
+            f"login_fails:{email_lower}",
+            f"login_lock:{email_lower}",
+        ])
+    if redis_keys_to_delete:
+        await redis.delete(*redis_keys_to_delete)
+
+    # Finally delete the user (get_db commits at request end)
     await session.delete(user)
-    await session.commit()
-    
+
     identifier = body.email or body.phone_number
     return MessageResponse(
         message=f"User {identifier} and all associated data completely deleted. "

@@ -2,11 +2,11 @@
 Media asset — HTTP routes.
 
 All user-facing endpoints require JWT auth (Bearer token from MS-1).
-Lambda callback endpoints use an internal API key for authentication.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.asset import controller
@@ -15,19 +15,17 @@ from app.asset.schemas import (
     AssetListResponse,
     AssetResponse,
     ConfirmUploadRequest,
-    ImageProcessCallbackRequest,
     MessageResponse,
     SignedUrlResponse,
-    TranscodeCallbackRequest,
     UploadRequest,
     UploadResponse,
 )
 from app.config import Settings
 from app.database import get_db
+from app.s3 import generate_presigned_get_url
 from shared.models.user import CurrentUser
 
 router = APIRouter(prefix="/media", tags=["media"])
-callback_router = APIRouter(prefix="/internal/media", tags=["internal"])
 
 
 def _get_settings() -> Settings:
@@ -67,11 +65,12 @@ async def request_upload(
 )
 async def confirm_upload(
     request: ConfirmUploadRequest,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(_get_settings),
 ) -> AssetResponse:
-    return await controller.confirm_upload(request, user, db, settings)
+    return await controller.confirm_upload(request, user, db, settings, background_tasks)
 
 
 # ── Asset CRUD ───────────────────────────────────────────────────────────────
@@ -142,29 +141,22 @@ async def get_signed_url(
     )
 
 
-# ── Lambda callbacks (internal) ─────────────────────────────────────────────
+# ── Public file serving (no auth — used by <img> tags) ─────────────────────
 
-@callback_router.post(
-    "/callback/transcode",
-    response_model=MessageResponse,
-    summary="Video transcode callback",
-    description="Called by the video transcode Lambda when a job completes or fails.",
+@router.get(
+    "/serve/{s3_key:path}",
+    summary="Serve a file via presigned redirect",
+    description=(
+        "Public endpoint (no auth). Generates a short-lived presigned GET URL "
+        "for the given S3 key and redirects to it. Used as a permanent URL "
+        "for profile images, banners, thumbnails, etc."
+    ),
+    tags=["media"],
+    response_class=RedirectResponse,
 )
-async def transcode_callback(
-    request: TranscodeCallbackRequest,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    return await controller.transcode_callback(request, db)
-
-
-@callback_router.post(
-    "/callback/image",
-    response_model=MessageResponse,
-    summary="Image processing callback",
-    description="Called by the image processing Lambda when processing completes.",
-)
-async def image_process_callback(
-    request: ImageProcessCallbackRequest,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    return await controller.image_process_callback(request, db)
+async def serve_file(
+    s3_key: str,
+    settings: Settings = Depends(_get_settings),
+) -> RedirectResponse:
+    url = await generate_presigned_get_url(s3_key, settings, expiry_seconds=3600)
+    return RedirectResponse(url=url, status_code=302)

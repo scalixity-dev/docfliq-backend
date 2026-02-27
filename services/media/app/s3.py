@@ -1,11 +1,10 @@
 """
-AWS S3 utilities — presigned URL generation for media uploads and downloads.
+AWS S3 utilities — presigned URL generation, object download/upload.
 
 Upload flow:
   1. Client requests a presigned PUT URL from the API.
   2. Client uploads the file directly to S3 using the presigned URL.
-  3. S3 PutObject event triggers the appropriate Lambda for processing.
-  4. Lambda updates the MediaAsset record via the callback endpoint.
+  3. Client confirms upload; API processes in-service (images via Pillow).
 """
 from __future__ import annotations
 
@@ -152,3 +151,47 @@ async def delete_object(s3_key: str, settings: Settings) -> None:
             await s3.delete_object(Bucket=settings.s3_bucket_media, Key=s3_key)
     except (BotoCoreError, ClientError) as exc:
         logger.error("S3 delete_object failed for key %s: %s", s3_key, exc)
+
+
+async def download_object(s3_key: str, settings: Settings) -> bytes:
+    """Download an S3 object and return its bytes."""
+    if not settings.aws_access_key_id:
+        raise S3PresignError()
+    try:
+        async with _s3_session(settings).client("s3") as s3:
+            response = await s3.get_object(
+                Bucket=settings.s3_bucket_media, Key=s3_key,
+            )
+            return await response["Body"].read()
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code", "")
+        if error_code in ("404", "NoSuchKey"):
+            raise S3ObjectNotFound()
+        raise S3PresignError()
+    except BotoCoreError:
+        raise S3PresignError()
+
+
+async def upload_object(
+    s3_key: str,
+    data: bytes,
+    content_type: str,
+    settings: Settings,
+    *,
+    cache_control: str = "max-age=31536000",
+) -> str:
+    """Upload bytes to S3. Returns the full s3:// URL."""
+    if not settings.aws_access_key_id:
+        raise S3PresignError()
+    try:
+        async with _s3_session(settings).client("s3") as s3:
+            await s3.put_object(
+                Bucket=settings.s3_bucket_media,
+                Key=s3_key,
+                Body=data,
+                ContentType=content_type,
+                CacheControl=cache_control,
+            )
+        return f"s3://{settings.s3_bucket_media}/{s3_key}"
+    except (BotoCoreError, ClientError):
+        raise S3PresignError()

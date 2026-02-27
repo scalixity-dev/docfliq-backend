@@ -7,10 +7,8 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import UserHiddenByBlock
 from app.profile.schemas import ProfileResponse, UpdateProfileRequest, UserSearchItem, UserSearchResponse
-from app.profile.service import get_profile, search_users, update_profile
-from app.social_graph import service as social_svc
+from app.profile.service import get_profile, get_profile_for_viewer, search_users, update_profile
 
 
 async def get_me(session: AsyncSession, user_id: uuid.UUID) -> ProfileResponse:
@@ -24,11 +22,8 @@ async def get_user(
     *,
     viewer_id: uuid.UUID,
 ) -> ProfileResponse:
-    # Block check: if the target user has blocked the viewer, return 404 to avoid
-    # leaking block status (same response as user-not-found).
-    if await social_svc.is_blocked_by(session, blocked_id=viewer_id, blocker_id=user_id):
-        raise UserHiddenByBlock()
-    user = await get_profile(session, user_id)
+    # Single query: load user + block check (raises 404 if blocked or not found)
+    user = await get_profile_for_viewer(session, user_id, viewer_id)
     return ProfileResponse.model_validate(user)
 
 

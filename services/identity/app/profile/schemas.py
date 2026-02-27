@@ -26,6 +26,7 @@ class UserSearchItem(BaseModel):
     role: UserRole
     specialty: str | None = None
     profile_image_url: str | None = None
+    banner_url: str | None = None
     verification_status: VerificationStatus
 
 
@@ -77,8 +78,13 @@ class UpdateProfileRequest(_Base):
     pharmacy_name: str | None = Field(None, max_length=200)
     # Phone number (E.164 format, e.g. "+919876543210")
     phone_number: str | None = Field(None, max_length=20)
+    # Profile picture / banner (S3 processed URLs from media service)
+    profile_image_url: str | None = Field(None, max_length=500)
+    banner_url: str | None = Field(None, max_length=500)
     # Notification preferences — JSONB dict of channel toggles
     notification_preferences: dict | None = None
+    # Set to False when user completes onboarding
+    is_new_user: bool | None = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -124,6 +130,7 @@ class ProfileResponse(BaseModel):
     location_state: str | None
     location_country: str | None
     profile_image_url: str | None
+    banner_url: str | None
     bio: str | None
     interests: list[str] | None
     purposes: list[str] | None
@@ -144,6 +151,7 @@ class ProfileResponse(BaseModel):
     pharmacy_name: str | None
     # Notification preferences
     notification_preferences: dict | None
+    is_new_user: bool
     created_at: datetime
 
     @computed_field  # type: ignore[misc]

@@ -6,19 +6,19 @@ the response. Thin glue layer between HTTP and business logic.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from app.asset import service
-from app.asset.constants import TranscodeStatus
+from app.asset.constants import AssetType, TranscodeStatus
 from app.asset.schemas import (
     AssetListResponse,
     AssetResponse,
     ConfirmUploadRequest,
-    ImageProcessCallbackRequest,
     MessageResponse,
     SignedUrlResponse,
-    TranscodeCallbackRequest,
     UploadRequest,
     UploadResponse,
 )
@@ -31,12 +31,15 @@ from app.exceptions import (
 from app.s3 import (
     ALLOWED_CONTENT_TYPES,
     MAX_FILE_SIZES,
+    download_object,
     generate_presigned_get_url,
     generate_presigned_put_url,
     get_object_metadata,
+    upload_object,
 )
 
 if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.config import Settings
@@ -92,6 +95,7 @@ async def confirm_upload(
     user: CurrentUser,
     db: AsyncSession,
     settings: Settings,
+    background_tasks: BackgroundTasks,
 ) -> AssetResponse:
     """Confirm a file has been uploaded to S3. Validates file exists and size."""
     asset = await service.get_asset_by_id(db, request.asset_id)
@@ -116,6 +120,16 @@ async def confirm_upload(
     asset = await service.confirm_upload(db, asset.asset_id, file_size)
     if asset is None:
         raise AssetNotFound()
+
+    # Schedule background processing
+    if asset.asset_type == AssetType.IMAGE:
+        background_tasks.add_task(
+            _process_image_background, asset.asset_id, s3_key, settings,
+        )
+    elif asset.asset_type == AssetType.VIDEO:
+        background_tasks.add_task(
+            _process_video_background, asset.asset_id, s3_key, settings,
+        )
 
     return AssetResponse.model_validate(asset)
 
@@ -191,44 +205,139 @@ async def delete_asset(
     return MessageResponse(message="Asset deleted successfully.")
 
 
-async def transcode_callback(
-    request: TranscodeCallbackRequest,
-    db: AsyncSession,
-) -> MessageResponse:
-    """Handle callback from video transcode Lambda."""
-    asset = await service.update_asset_by_job_id(
-        db,
-        request.mediaconvert_job_id,
-        status=request.status,
-        processed_url=request.processed_url,
-        hls_url=request.hls_url,
-        thumbnail_url=request.thumbnail_url,
-        duration_secs=request.duration_secs,
-        resolution=request.resolution,
-        error_message=request.error_message,
-    )
-    if asset is None:
-        logger.warning(
-            "Transcode callback for unknown job: %s", request.mediaconvert_job_id
+async def _process_image_background(
+    asset_id: uuid.UUID,
+    s3_key: str,
+    settings: Settings,
+) -> None:
+    """
+    Background task: download image from S3, process with Pillow, upload
+    processed variants, and update DB status.
+
+    Uses its own DB session (request session is closed by the time this runs).
+    """
+    from app.database import get_session_factory
+
+    try:
+        # 1. Download original image
+        image_data = await download_object(s3_key, settings)
+
+        # 2. Process with Pillow (CPU-bound → offload to thread)
+        loop = asyncio.get_running_loop()
+        variants = await loop.run_in_executor(
+            None, lambda: service.process_image_sync(image_data),
         )
-    return MessageResponse(message="Callback processed.")
+
+        # 3. Upload each processed variant to S3
+        processed_url = None
+        thumbnail_url = None
+        for size_name, webp_bytes in variants.items():
+            out_key = service.build_processed_key(s3_key, size_name)
+            s3_url = await upload_object(out_key, webp_bytes, "image/webp", settings)
+            if size_name == "large":
+                processed_url = s3_url
+            elif size_name == "thumbnail":
+                thumbnail_url = s3_url
+
+        # 4. Update DB status
+        factory = get_session_factory()
+        async with factory() as session:
+            await service.update_transcode_status(
+                session,
+                asset_id,
+                status=TranscodeStatus.COMPLETED,
+                processed_url=processed_url,
+                thumbnail_url=thumbnail_url,
+            )
+            await session.commit()
+
+        logger.info("Image processing completed for asset %s", asset_id)
+
+    except Exception:
+        logger.exception("Image processing failed for asset %s", asset_id)
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.FAILED,
+                    error_message="In-service image processing failed",
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to update error status for asset %s", asset_id)
 
 
-async def image_process_callback(
-    request: ImageProcessCallbackRequest,
-    db: AsyncSession,
-) -> MessageResponse:
-    """Handle callback from image processing Lambda."""
-    asset = await service.update_transcode_status(
-        db,
-        request.asset_id,
-        status=request.status,
-        processed_url=request.processed_url,
-        thumbnail_url=request.thumbnail_url,
-        error_message=request.error_message,
-    )
-    if asset is not None and request.file_size_bytes is not None:
-        asset.file_size_bytes = request.file_size_bytes
-        await db.flush()
+async def _process_video_background(
+    asset_id: uuid.UUID,
+    s3_key: str,
+    settings: Settings,
+) -> None:
+    """
+    Background task: submit a MediaConvert transcoding job and poll until done.
 
-    return MessageResponse(message="Callback processed.")
+    Produces HLS (720p + 1080p + 4K) + MP4 download + thumbnail.
+    Uses its own DB session (request session is closed by the time this runs).
+    """
+    from app.database import get_session_factory
+    from app.mediaconvert import poll_job_until_done, submit_transcode_job
+
+    try:
+        # 1. Submit MediaConvert job
+        job_id = await submit_transcode_job(s3_key, settings)
+
+        # 2. Store job_id in DB
+        factory = get_session_factory()
+        async with factory() as session:
+            await service.update_transcode_status(
+                session,
+                asset_id,
+                status=TranscodeStatus.PROCESSING,
+                mediaconvert_job_id=job_id,
+            )
+            await session.commit()
+
+        logger.info("MediaConvert job %s submitted for asset %s", job_id, asset_id)
+
+        # 3. Poll until done
+        result = await poll_job_until_done(job_id, settings)
+
+        # 4. Update DB with result
+        async with factory() as session:
+            if result["status"] == "COMPLETED":
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.COMPLETED,
+                    processed_url=result.get("processed_url"),
+                    hls_url=result.get("hls_url"),
+                    thumbnail_url=result.get("thumbnail_url"),
+                    duration_secs=result.get("duration_secs"),
+                    resolution=result.get("resolution"),
+                )
+                logger.info("Video transcoding completed for asset %s", asset_id)
+            else:
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.FAILED,
+                    error_message=result.get("error_message", "Transcoding failed"),
+                )
+                logger.error("Video transcoding failed for asset %s: %s", asset_id, result.get("error_message"))
+            await session.commit()
+
+    except Exception:
+        logger.exception("Video processing failed for asset %s", asset_id)
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                await service.update_transcode_status(
+                    session,
+                    asset_id,
+                    status=TranscodeStatus.FAILED,
+                    error_message="Failed to submit or poll MediaConvert job",
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to update error status for asset %s", asset_id)

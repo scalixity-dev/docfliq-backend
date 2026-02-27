@@ -94,6 +94,9 @@ class User(Base):
     profile_image_url: Mapped[str | None] = mapped_column(
         sa.String(500), nullable=True
     )
+    banner_url: Mapped[str | None] = mapped_column(
+        sa.String(500), nullable=True
+    )
     bio: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
 
     # ── Verification state machine ────────────────────────────────────────────
@@ -119,6 +122,15 @@ class User(Base):
         nullable=False,
         default=False,
         server_default=sa.text("false"),
+    )
+
+    # ── Onboarding flag ────────────────────────────────────────────────────────
+    # True until the user completes sign-up questions (role, location, etc.)
+    is_new_user: Mapped[bool] = mapped_column(
+        sa.Boolean(),
+        nullable=False,
+        default=True,
+        server_default=sa.text("true"),
     )
 
     # ── Account flags ─────────────────────────────────────────────────────────
