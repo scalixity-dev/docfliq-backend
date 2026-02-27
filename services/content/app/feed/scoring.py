@@ -57,22 +57,29 @@ def score_recency(created_at: datetime) -> float:
     return math.pow(2.0, -hours_old / 24.0)
 
 
+def _tag_overlap(tags: list[str] | None, interests: list[str] | None) -> float:
+    """Return 1.0 if any case-insensitive overlap, else 0.0."""
+    if not tags or not interests:
+        return 0.0
+    tag_set = {t.lower().strip() for t in tags}
+    interest_set = {i.lower().strip() for i in interests}
+    return 1.0 if tag_set & interest_set else 0.0
+
+
 def score_specialty(
     post_tags: list[str] | None,
     user_interests: list[str],
+    post_hashtags: list[str] | None = None,
 ) -> float:
-    """Tag-overlap specialty score.
+    """Combined topic relevance score (specialty tags + hashtags).
 
-    Exact tag match (case-insensitive) on any tag → 1.0.
-    No overlap → 0.0.
-
-    'Related' (0.5) is intentionally omitted until a specialty taxonomy exists.
+    Specialty tag match (controlled taxonomy) → 1.0.
+    Hashtag overlap with user interests      → 0.7 (lower weight, freeform tags).
+    Returns max of the two, capped at 1.0.
     """
-    if not post_tags or not user_interests:
-        return 0.0
-    post_set = {t.lower().strip() for t in post_tags}
-    interest_set = {i.lower().strip() for i in user_interests}
-    return 1.0 if post_set & interest_set else 0.0
+    specialty_score = _tag_overlap(post_tags, user_interests)
+    hashtag_score = _tag_overlap(post_hashtags, user_interests)
+    return min(1.0, max(specialty_score, 0.7 * hashtag_score))
 
 
 def normalise_affinity(

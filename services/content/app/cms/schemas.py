@@ -225,6 +225,10 @@ class PostResponse(BaseModel):
         )
     )
     specialty_tags: list[str] | None
+    hashtags: list[str] | None = Field(
+        default=None,
+        description="Auto-extracted hashtags from post body (lowercase, without '#' prefix).",
+    )
     like_count: int
     comment_count: int
     share_count: int

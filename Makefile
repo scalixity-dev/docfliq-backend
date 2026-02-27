@@ -103,6 +103,14 @@ run-identity:
 	$(BIN)/uvicorn app.main:app --reload --app-dir services/identity --host 0.0.0.0 --port 8001
 
 run-content:
+	@docker run -d --name docfliq-opensearch --network docfliq-net \
+		-e "discovery.type=single-node" \
+		-e "DISABLE_SECURITY_PLUGIN=true" \
+		-e "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m" \
+		-p 9200:9200 \
+		-v docfliq_opensearch_data:/usr/share/opensearch/data \
+		opensearchproject/opensearch:2.11.0 2>/dev/null || docker start docfliq-opensearch 2>/dev/null || true
+	@echo "Waiting for opensearch..." && until curl -s http://localhost:9200 >/dev/null 2>&1; do sleep 2; done && echo "opensearch ready"
 	$(BIN)/uvicorn app.main:app --reload --app-dir services/content --host 0.0.0.0 --port 8002
 
 run-course:
@@ -118,7 +126,7 @@ run-platform:
 	$(BIN)/uvicorn app.main:app --reload --app-dir services/platform --host 0.0.0.0 --port 8006
 
 run-media:
-	$(BIN)/uvicorn app.main:app --reload --app-dir services/media --host 0.0.0.0 --port 8007
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/media --host 0.0.0.0 --port 8005
 
 clean:
 	rm -rf .ruff_cache .pytest_cache

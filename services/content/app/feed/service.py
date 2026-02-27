@@ -342,7 +342,10 @@ async def get_cold_start_feed(
                     .where(
                         Post.status.in_(_LIVE_STATUSES),
                         Post.visibility == PostVisibility.PUBLIC,
-                        Post.specialty_tags.overlap(user_interests),  # type: ignore[attr-defined]
+                        or_(
+                            Post.specialty_tags.overlap(user_interests),  # type: ignore[attr-defined]
+                            Post.hashtags.overlap(user_interests),  # type: ignore[attr-defined]
+                        ),
                         Post.created_at >= cutoff,
                     )
                     .order_by(Post.created_at.desc())
@@ -424,7 +427,7 @@ async def get_for_you_feed(
         (
             score_composite(
                 score_recency(p.created_at),
-                score_specialty(p.specialty_tags, user_interests),
+                score_specialty(p.specialty_tags, user_interests, p.hashtags),
                 affinities.get(p.author_id, 0.0),
                 config,
             ),

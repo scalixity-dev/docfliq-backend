@@ -27,6 +27,7 @@ def _build_post_document(post) -> dict[str, Any]:
         "title":            post.title or "",
         "body_snippet":     body[:500],
         "specialty_tags":   post.specialty_tags or [],
+        "hashtags":         post.hashtags or [],
         "author_id":        str(post.author_id),
         "pricing_type":     None,   # Posts are always free
         "duration_mins":    None,

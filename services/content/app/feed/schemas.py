@@ -32,6 +32,7 @@ class PostSummary(BaseModel):
     visibility: PostVisibility
     status: PostStatus = Field(description="PUBLISHED or EDITED for feed items.")
     specialty_tags: list[str] | None
+    hashtags: list[str] | None = None
     like_count: int
     comment_count: int
     share_count: int

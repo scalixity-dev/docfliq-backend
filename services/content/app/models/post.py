@@ -39,6 +39,7 @@ class Post(Base):
         post_status_enum, nullable=False, default=PostStatus.PUBLISHED
     )
     specialty_tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    hashtags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     like_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     comment_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     share_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -80,6 +81,8 @@ class Post(Base):
         Index("ix_posts_created_at", "created_at"),
         # GIN index for array containment queries on specialty_tags
         Index("ix_posts_specialty_tags", "specialty_tags", postgresql_using="gin"),
+        # GIN index for array containment queries on hashtags
+        Index("ix_posts_hashtags", "hashtags", postgresql_using="gin"),
         # Functional GIN index for full-text search on title + body
         Index(
             "ix_posts_fts",

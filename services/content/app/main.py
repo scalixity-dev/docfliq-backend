@@ -9,6 +9,7 @@ from app.database import init_db
 from app.cms.admin_router import router as cms_admin_router
 from app.cms.router import router as cms_router
 from app.experiments.router import router as experiments_router
+from app.hashtags.router import router as hashtags_router
 from app.feed.router import router as feed_router
 from app.interactions.router import router as interactions_router
 from app.notifications.router import router as notifications_router
@@ -169,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix="/api/v1")
     app.include_router(notifications_internal_router, prefix="/api/v1")
     app.include_router(experiments_router, prefix="/api/v1")
+    app.include_router(hashtags_router, prefix="/api/v1")
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict:

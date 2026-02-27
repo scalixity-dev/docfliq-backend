@@ -130,6 +130,10 @@ async def create_post(
     )
     link_prev = payload.link_preview.model_dump() if payload.link_preview else None
 
+    from app.cms.hashtags import extract_hashtags
+
+    extracted_hashtags = extract_hashtags(payload.body)
+
     post = Post(
         author_id=author_id,
         content_type=payload.content_type,
@@ -140,6 +144,7 @@ async def create_post(
         visibility=payload.visibility,
         status=payload.status,
         specialty_tags=payload.specialty_tags,
+        hashtags=extracted_hashtags or None,
         channel_id=payload.channel_id,
     )
     db.add(post)
@@ -172,6 +177,11 @@ async def update_post(
 
     for field, value in update_data.items():
         setattr(post, field, value)
+
+    # Re-extract hashtags when body changes
+    if "body" in update_data:
+        from app.cms.hashtags import extract_hashtags
+        post.hashtags = extract_hashtags(post.body) or None
 
     post.version += 1
     if post.status == PostStatus.PUBLISHED:

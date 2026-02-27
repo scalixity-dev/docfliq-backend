@@ -32,6 +32,7 @@ CONTENT_INDEX_MAPPING: dict[str, Any] = {
             # First 500 chars of body/description — used for search preview snippets
             "body_snippet":     {"type": "text"},
             "specialty_tags":   {"type": "keyword", "boost": 2},
+            "hashtags":         {"type": "keyword", "boost": 1.5},
             "author_id":        {"type": "keyword"},
             # FREE / PAID — facet filter for courses and webinars
             "pricing_type":     {"type": "keyword"},
@@ -116,7 +117,7 @@ async def search_content(
         must.append({
             "multi_match": {
                 "query": query,
-                "fields": ["title^3", "specialty_tags^2", "body_snippet"],
+                "fields": ["title^3", "specialty_tags^2", "hashtags^1.5", "body_snippet"],
                 "type": "best_fields",
                 "fuzziness": "AUTO",
             }
@@ -145,6 +146,9 @@ async def search_content(
             "specialty_tag_facets": {
                 "terms": {"field": "specialty_tags", "size": 20}
             },
+            "hashtag_facets": {
+                "terms": {"field": "hashtags", "size": 30}
+            },
         },
         "from": offset,
         "size": limit,
@@ -167,12 +171,12 @@ async def suggest_content(
         "query": {
             "multi_match": {
                 "query": partial,
-                "fields": ["title^3", "specialty_tags^2"],
+                "fields": ["title^3", "specialty_tags^2", "hashtags^1.5"],
                 "type": "phrase_prefix",
             }
         },
         "size": limit,
-        "_source": ["content_id", "content_type", "title", "specialty_tags"],
+        "_source": ["content_id", "content_type", "title", "specialty_tags", "hashtags"],
     }
     return await client.search(index=f"{index_prefix}_content", body=body)
 
