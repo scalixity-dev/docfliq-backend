@@ -22,6 +22,8 @@ from app.cms.exceptions import (
     PostNotRestorableError,
 )
 from app.cms.schemas import (
+    AdminChannelListResponse,
+    AdminPostListResponse,
     ChannelResponse,
     CreateChannelRequest,
     CreatePostRequest,
@@ -284,3 +286,57 @@ async def update_channel(
             detail="Only the channel owner can perform this action",
         )
     return ChannelResponse.model_validate(channel)
+
+
+# ---------------------------------------------------------------------------
+# Admin controllers
+# ---------------------------------------------------------------------------
+
+
+async def admin_list_posts(
+    db: AsyncSession,
+    status_filter: str | None = None,
+    content_type: str | None = None,
+    page: int = 1,
+    size: int = 25,
+) -> AdminPostListResponse:
+    posts, total = await service.admin_list_posts(
+        db, status=status_filter, content_type=content_type, page=page, size=size
+    )
+    return AdminPostListResponse(
+        items=[PostResponse.model_validate(p) for p in posts],
+        total=total,
+        page=page,
+        size=size,
+    )
+
+
+async def admin_list_channels(
+    db: AsyncSession,
+    page: int = 1,
+    size: int = 25,
+) -> AdminChannelListResponse:
+    channels, total = await service.admin_list_channels(db, page=page, size=size)
+    return AdminChannelListResponse(
+        items=[ChannelResponse.model_validate(c) for c in channels],
+        total=total,
+        page=page,
+        size=size,
+    )
+
+
+async def restore_post(post_id: UUID, db: AsyncSession) -> PostResponse:
+    """Admin: restore a hidden/deleted post back to PUBLISHED."""
+    try:
+        post = await service.restore_post(post_id, db)
+    except PostNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Post {post_id} not found",
+        )
+    except PostNotRestorableError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only HIDDEN_BY_ADMIN or SOFT_DELETED posts can be restored",
+        )
+    return PostResponse.model_validate(post)

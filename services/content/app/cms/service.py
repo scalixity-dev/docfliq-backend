@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -338,6 +338,55 @@ async def create_channel(
         raise ChannelSlugTakenError(slug)
     await db.refresh(channel)
     return channel
+
+
+async def admin_list_posts(
+    db: AsyncSession,
+    status: str | None = None,
+    content_type: str | None = None,
+    page: int = 1,
+    size: int = 25,
+) -> tuple[list[Post], int]:
+    """List all posts (any status) with optional filters. Returns (posts, total)."""
+    q = select(Post)
+    count_q = select(func.count()).select_from(Post)
+
+    if status:
+        q = q.where(Post.status == status)
+        count_q = count_q.where(Post.status == status)
+    if content_type:
+        q = q.where(Post.content_type == content_type)
+        count_q = count_q.where(Post.content_type == content_type)
+
+    total = (await db.execute(count_q)).scalar() or 0
+    q = q.order_by(Post.created_at.desc()).offset((page - 1) * size).limit(size)
+    result = await db.execute(q)
+    return list(result.scalars().all()), total
+
+
+async def admin_list_channels(
+    db: AsyncSession,
+    page: int = 1,
+    size: int = 25,
+) -> tuple[list[Channel], int]:
+    """List all channels (including inactive). Returns (channels, total)."""
+    total = (await db.execute(select(func.count()).select_from(Channel))).scalar() or 0
+    result = await db.execute(
+        select(Channel).order_by(Channel.created_at.desc()).offset((page - 1) * size).limit(size)
+    )
+    return list(result.scalars().all()), total
+
+
+async def restore_post(post_id: UUID, db: AsyncSession) -> Post:
+    """Admin action: restore a HIDDEN_BY_ADMIN or SOFT_DELETED post back to PUBLISHED."""
+    post = await get_post_by_id(post_id, db)
+    if post.status not in (PostStatus.HIDDEN_BY_ADMIN, PostStatus.SOFT_DELETED):
+        raise PostNotRestorableError(0)
+    post.status = PostStatus.PUBLISHED
+    post.deleted_at = None
+    await db.flush()
+    await db.refresh(post)
+    return post
 
 
 async def update_channel(

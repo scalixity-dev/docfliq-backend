@@ -13,7 +13,7 @@ SHARED = shared
 
 .PHONY: venv install install-shared install-dev setup-env test lint \
 	docker-up docker-down docker-clean migrate seed create-superadmin \
-	run-identity run-content run-course run-webinar run-payment run-platform \
+	run-identity run-content run-course run-webinar run-payment run-platform run-media \
 	clean
 
 ## Create the virtual environment
@@ -116,6 +116,9 @@ run-payment:
 
 run-platform:
 	$(BIN)/uvicorn app.main:app --reload --app-dir services/platform --host 0.0.0.0 --port 8006
+
+run-media:
+	$(BIN)/uvicorn app.main:app --reload --app-dir services/media --host 0.0.0.0 --port 8007
 
 clean:
 	rm -rf .ruff_cache .pytest_cache

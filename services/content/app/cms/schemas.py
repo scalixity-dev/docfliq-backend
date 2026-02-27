@@ -278,3 +278,26 @@ class PostListResponse(BaseModel):
         description="Opaque cursor string. Pass as `cursor` param to fetch the next page.",
     )
     has_more: bool = Field(description="True when additional pages exist.")
+
+
+# ---------------------------------------------------------------------------
+# Admin response schemas
+# ---------------------------------------------------------------------------
+
+
+class AdminPostListResponse(BaseModel):
+    """Offset-paginated list of posts for admin views (all statuses)."""
+
+    items: list[PostResponse]
+    total: int = Field(description="Total number of matching posts.")
+    page: int
+    size: int
+
+
+class AdminChannelListResponse(BaseModel):
+    """Offset-paginated list of channels for admin views (including inactive)."""
+
+    items: list[ChannelResponse]
+    total: int = Field(description="Total number of channels.")
+    page: int
+    size: int

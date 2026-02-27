@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.database import init_db
+from app.cms.admin_router import router as cms_admin_router
 from app.cms.router import router as cms_router
 from app.experiments.router import router as experiments_router
 from app.feed.router import router as feed_router
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     app.middleware("http")(error_envelope_middleware)
 
     app.include_router(cms_router, prefix="/api/v1")
+    app.include_router(cms_admin_router, prefix="/api/v1")
     app.include_router(feed_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(interactions_router, prefix="/api/v1")
