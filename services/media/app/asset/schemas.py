@@ -95,3 +95,14 @@ class SignedUrlResponse(_Base):
 
 class MessageResponse(_Base):
     message: str
+
+
+class PlaybackInfoResponse(_Base):
+    """Video playback metadata for the frontend player (public, no auth)."""
+    asset_id: uuid.UUID
+    transcode_status: TranscodeStatus
+    hls_url: str | None = Field(default=None, description="Stream proxy URL for HLS master playlist")
+    thumbnail_url: str | None = Field(default=None, description="Serve URL for video thumbnail")
+    original_url: str | None = Field(default=None, description="Serve URL for original file (MP4 fallback)")
+    duration_secs: int | None = None
+    resolution: str | None = None

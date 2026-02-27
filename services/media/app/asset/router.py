@@ -5,8 +5,10 @@ All user-facing endpoints require JWT auth (Bearer token from MS-1).
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
-from fastapi.responses import RedirectResponse
+import io
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, status
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.asset import controller
@@ -16,13 +18,14 @@ from app.asset.schemas import (
     AssetResponse,
     ConfirmUploadRequest,
     MessageResponse,
+    PlaybackInfoResponse,
     SignedUrlResponse,
     UploadRequest,
     UploadResponse,
 )
 from app.config import Settings
 from app.database import get_db
-from app.s3 import generate_presigned_get_url
+from app.s3 import download_object, generate_presigned_get_url
 from shared.models.user import CurrentUser
 
 router = APIRouter(prefix="/media", tags=["media"])
@@ -160,3 +163,67 @@ async def serve_file(
 ) -> RedirectResponse:
     url = await generate_presigned_get_url(s3_key, settings, expiry_seconds=3600)
     return RedirectResponse(url=url, status_code=302)
+
+
+# ── HLS stream proxy (no auth — used by video player) ────────────────────
+
+_STREAM_CONTENT_TYPES = {
+    ".m3u8": "application/vnd.apple.mpegurl",
+    ".ts": "video/MP2T",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".mp4": "video/mp4",
+}
+
+
+@router.get(
+    "/stream/{s3_key:path}",
+    summary="Stream a file via proxy (no redirect)",
+    description=(
+        "Public endpoint (no auth). Downloads the S3 object and returns "
+        "the content directly. Required for HLS playback because .m3u8 "
+        "playlists reference segments by relative paths."
+    ),
+    tags=["media"],
+)
+async def stream_file(
+    s3_key: str,
+    settings: Settings = Depends(_get_settings),
+) -> Response:
+    data = await download_object(s3_key, settings)
+
+    # Determine content type from extension
+    ext = ""
+    if "." in s3_key:
+        ext = "." + s3_key.rsplit(".", 1)[1].lower()
+    content_type = _STREAM_CONTENT_TYPES.get(ext, "application/octet-stream")
+
+    # Manifests: no-cache (may update). Segments: cache aggressively (immutable).
+    cache = "no-cache" if ext == ".m3u8" else "public, max-age=3600"
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=content_type,
+        headers={"Cache-Control": cache},
+    )
+
+
+# ── Public playback info (no auth — used by video player) ────────────────
+
+@router.get(
+    "/playback/{asset_id}",
+    response_model=PlaybackInfoResponse,
+    summary="Get video playback info (public, no auth)",
+    description=(
+        "Returns current HLS URL, thumbnail URL, and transcode status. "
+        "Used by the video player to check if adaptive streaming is available."
+    ),
+    tags=["media"],
+)
+async def get_playback_info(
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(_get_settings),
+) -> PlaybackInfoResponse:
+    return await controller.get_playback_info(asset_id, db, settings)
