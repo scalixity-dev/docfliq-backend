@@ -6,6 +6,7 @@ All user-facing endpoints require JWT auth (Bearer token from MS-1).
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.asset import controller
@@ -21,6 +22,7 @@ from app.asset.schemas import (
 )
 from app.config import Settings
 from app.database import get_db
+from app.s3 import generate_presigned_get_url
 from shared.models.user import CurrentUser
 
 router = APIRouter(prefix="/media", tags=["media"])
@@ -137,3 +139,24 @@ async def get_signed_url(
     return await controller.get_signed_url(
         asset_id, user, db, settings, expiry_seconds=expiry,
     )
+
+
+# ── Public file serving (no auth — used by <img> tags) ─────────────────────
+
+@router.get(
+    "/serve/{s3_key:path}",
+    summary="Serve a file via presigned redirect",
+    description=(
+        "Public endpoint (no auth). Generates a short-lived presigned GET URL "
+        "for the given S3 key and redirects to it. Used as a permanent URL "
+        "for profile images, banners, thumbnails, etc."
+    ),
+    tags=["media"],
+    response_class=RedirectResponse,
+)
+async def serve_file(
+    s3_key: str,
+    settings: Settings = Depends(_get_settings),
+) -> RedirectResponse:
+    url = await generate_presigned_get_url(s3_key, settings, expiry_seconds=3600)
+    return RedirectResponse(url=url, status_code=302)

@@ -37,6 +37,7 @@ async def create_asset(
     )
     db.add(asset)
     await db.flush()
+    await db.refresh(asset)
     return asset
 
 
@@ -183,6 +184,7 @@ async def confirm_upload(
         asset.transcode_status = TranscodeStatus.COMPLETED
 
     await db.flush()
+    await db.refresh(asset)
     return asset
 
 

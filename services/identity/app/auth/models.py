@@ -94,6 +94,9 @@ class User(Base):
     profile_image_url: Mapped[str | None] = mapped_column(
         sa.String(500), nullable=True
     )
+    banner_url: Mapped[str | None] = mapped_column(
+        sa.String(500), nullable=True
+    )
     bio: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
 
     # ── Verification state machine ────────────────────────────────────────────

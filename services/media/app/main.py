@@ -1,6 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+# Configure application logging so background task logs are visible
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
