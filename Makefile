@@ -50,7 +50,7 @@ lint:
 	$(BIN)/ruff check shared services --fix 2>/dev/null || $(PYTHON) -m ruff check shared services --fix
 	$(BIN)/ruff format shared services 2>/dev/null || $(PYTHON) -m ruff format shared services
 
-## Start local postgres + redis (plain docker run — no compose plugin needed)
+## Start local postgres + redis + opensearch (plain docker run — no compose plugin needed)
 docker-up:
 	@docker network create docfliq-net 2>/dev/null || true
 	@docker run -d --name docfliq-postgres --network docfliq-net \
@@ -62,18 +62,26 @@ docker-up:
 	@docker run -d --name docfliq-redis --network docfliq-net \
 		-p 6379:6379 \
 		redis:7-alpine 2>/dev/null || docker start docfliq-redis
+	@docker run -d --name docfliq-opensearch --network docfliq-net \
+		-e "discovery.type=single-node" \
+		-e "DISABLE_SECURITY_PLUGIN=true" \
+		-e "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m" \
+		-p 9200:9200 \
+		-v docfliq_opensearch_data:/usr/share/opensearch/data \
+		opensearchproject/opensearch:2.11.0 2>/dev/null || docker start docfliq-opensearch
 	@echo "Waiting for postgres..." && until docker exec docfliq-postgres pg_isready -U docfliq -q; do sleep 1; done
-	@echo "postgres + redis ready"
+	@echo "Waiting for opensearch..." && until curl -s http://localhost:9200 >/dev/null 2>&1; do sleep 2; done
+	@echo "postgres + redis + opensearch ready"
 
 ## Stop containers (data kept in volumes)
 docker-down:
-	@docker stop docfliq-postgres docfliq-redis 2>/dev/null || true
+	@docker stop docfliq-postgres docfliq-redis docfliq-opensearch 2>/dev/null || true
 	@echo "Containers stopped"
 
 ## Destroy containers + data volumes (full reset)
 docker-clean:
-	@docker rm -f docfliq-postgres docfliq-redis 2>/dev/null || true
-	@docker volume rm docfliq_postgres_data 2>/dev/null || true
+	@docker rm -f docfliq-postgres docfliq-redis docfliq-opensearch 2>/dev/null || true
+	@docker volume rm docfliq_postgres_data docfliq_opensearch_data 2>/dev/null || true
 	@docker network rm docfliq-net 2>/dev/null || true
 	@echo "Dev containers and data removed"
 

@@ -122,6 +122,10 @@ async def get_for_you_feed(
             "Pass repeatedly: ?cohort_ids=id1&cohort_ids=id2."
         ),
     ),
+    exclude_author_ids: list[UUID] = Query(
+        default=[],
+        description="Author IDs to exclude from the feed (e.g. muted or blocked users).",
+    ),
     limit: int = Query(20, ge=1, le=100, description="Page size."),
     offset: int = Query(0, ge=0, le=480, description="Pagination offset (max 480 to respect 500-item cap)."),
     user_id: UUID = Depends(get_current_user),
@@ -136,6 +140,7 @@ async def get_for_you_feed(
         redis=redis,
         limit=limit,
         offset=offset,
+        exclude_author_ids=exclude_author_ids,
     )
 
 
@@ -172,6 +177,10 @@ async def get_following_feed(
         description="Total posts already loaded this session. Used to enforce 500-post hard cap.",
     ),
     limit: int = Query(20, ge=1, le=100),
+    exclude_author_ids: list[UUID] = Query(
+        default=[],
+        description="Author IDs to exclude from the feed (e.g. muted or blocked users).",
+    ),
     _: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FollowingFeedResponse:
@@ -181,6 +190,7 @@ async def get_following_feed(
         limit=limit,
         depth=depth,
         cursor=cursor,
+        exclude_author_ids=exclude_author_ids,
     )
 
 

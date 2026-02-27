@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     # ── App URLs ───────────────────────────────────────────────────────────────
     # Used to build email verification links. No trailing slash.
     app_base_url: str = "http://localhost:3000"
+    # Content service base URL for cross-service calls (no trailing slash).
+    content_service_url: str = "http://localhost:8002/api/v1"
 
     # ── OAuth (Google + Microsoft) ──────────────────────────────────────────────
     google_client_id: str = ""

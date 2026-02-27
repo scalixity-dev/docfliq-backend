@@ -113,6 +113,13 @@ AWS_REGION=${AWS_REGION}
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 
+# ── OpenSearch (local Docker via make docker-up) ─────────────────────────────
+OPENSEARCH_ENABLED=true
+OPENSEARCH_URL=http://localhost:9200
+OPENSEARCH_INDEX_PREFIX=docfliq
+OPENSEARCH_AUTH_MODE=basic
+OPENSEARCH_AWS_REGION=${AWS_REGION}
+
 # ── App ───────────────────────────────────────────────────────────────────────
 ENV_NAME=development
 CORS_ORIGINS=http://localhost:3000,http://localhost:8080

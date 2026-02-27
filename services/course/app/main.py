@@ -10,6 +10,7 @@ from app.lms.router import router as lms_router
 from app.assessment.router import router as assessment_router
 from app.certificates.router import router as certificates_router
 from app.player.router import router as player_router
+from app.surveys.router import router as surveys_router
 from shared.middleware.request_id import request_id_middleware
 from shared.middleware.error_handler import error_envelope_middleware
 
@@ -45,9 +46,10 @@ SCORM wrapper, and certificate generation with QR verification.
 
 | Tag | Description |
 |-----|-------------|
-| **LMS** | Course, module, lesson CRUD + enrollment + progress tracking |
-| **Assessment** | Quiz management (MCQ/MSQ) + timed attempts + grading |
-| **Player** | Video/document playback, signed URLs, heartbeat, SCORM, weighted progress |
+| **LMS** | Course, module, lesson CRUD + enrollment + progress tracking + instructors + promo codes |
+| **Assessment** | Quiz management (MCQ/MSQ/TRUE_FALSE/SHORT_ANSWER) + timed attempts + grading |
+| **Player** | Video/document/presentation playback, signed URLs, heartbeat, SCORM, weighted progress |
+| **Surveys** | Survey CRUD, response submission, aggregated results |
 | **Certificates** | Certificate generation + public QR verification |
 
 ### Authentication
@@ -60,12 +62,13 @@ Token structure: `{"sub": "<user_uuid>", "email": "...", "roles": [...]}`.
 
 - **Free**: `POST /api/v1/lms/courses/{id}/enroll` — instant access
 - **Paid**: `POST /api/v1/lms/courses/{id}/enroll/paid` — requires `payment_id` from MS-6
+- **Approval**: If `approval_required=true`, enrollment enters `PENDING_APPROVAL` state
 
 ### Status Transitions
 
 ```
 Course:     DRAFT → PUBLISHED → ARCHIVED
-Enrollment: IN_PROGRESS → COMPLETED | DROPPED
+Enrollment: PENDING_APPROVAL → IN_PROGRESS → COMPLETED | DROPPED
 Lesson:     NOT_STARTED → IN_PROGRESS → COMPLETED
 ```
 """
@@ -96,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(assessment_router, prefix="/api/v1")
     app.include_router(player_router, prefix="/api/v1")
     app.include_router(certificates_router, prefix="/api/v1")
+    app.include_router(surveys_router, prefix="/api/v1")
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict:

@@ -21,7 +21,11 @@ from app.player.schemas import (
     DocumentHeartbeatResponse,
     HeartbeatRequest,
     LessonContentResponse,
+    PresentationHeartbeatRequest,
+    PresentationHeartbeatResponse,
+    ScormApiLogRequest,
     ScormCommitRequest,
+    ScormRuntimeDataResponse,
     ScormSessionResponse,
     VideoHeartbeatResponse,
 )
@@ -117,3 +121,49 @@ async def get_detailed_progress(
     user_id: UUID = Depends(get_current_user),
 ) -> CourseProgressDetailResponse:
     return await controller.get_detailed_progress(db, course_id, user_id)
+
+
+@router.post(
+    "/lessons/{lesson_id}/heartbeat/presentation",
+    response_model=PresentationHeartbeatResponse,
+    summary="Presentation / slide viewing heartbeat",
+    description="Client sends on slide navigation for PRESENTATION lessons. "
+    "Tracks slides viewed vs total slides.",
+)
+async def presentation_heartbeat(
+    lesson_id: UUID,
+    body: PresentationHeartbeatRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+    redis: Redis = Depends(get_redis),
+) -> PresentationHeartbeatResponse:
+    return await controller.presentation_heartbeat(db, lesson_id, user_id, body, redis)
+
+
+@router.get(
+    "/scorm/sessions/{session_id}/runtime-data",
+    response_model=ScormRuntimeDataResponse,
+    summary="Get SCORM session runtime data",
+    description="Returns tracking data, suspend data, and API call logs for a SCORM session.",
+)
+async def get_scorm_runtime_data(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> ScormRuntimeDataResponse:
+    return await controller.get_scorm_runtime_data(db, session_id, user_id)
+
+
+@router.post(
+    "/scorm/sessions/{session_id}/api-log",
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a SCORM API call",
+    description="Records individual SCORM JS wrapper API calls for debugging.",
+)
+async def log_scorm_api_call(
+    session_id: UUID,
+    body: ScormApiLogRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> dict:
+    return await controller.log_scorm_api_call(db, session_id, user_id, body)

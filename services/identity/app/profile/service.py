@@ -51,6 +51,35 @@ async def get_profile_for_viewer(
     return user
 
 
+async def search_users(
+    session: AsyncSession,
+    query: str,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[User], int]:
+    """Search active users by full_name or username using ILIKE."""
+    pattern = f"%{query}%"
+    base = (
+        sa.select(User)
+        .where(
+            User.is_active.is_(True),
+            User.is_banned.is_(False),
+            sa.or_(
+                User.full_name.ilike(pattern),
+                User.username.ilike(pattern),
+            ),
+        )
+    )
+    total_result = await session.execute(
+        sa.select(sa.func.count()).select_from(base.subquery())
+    )
+    total = total_result.scalar_one()
+    result = await session.execute(
+        base.order_by(User.full_name.asc()).offset(offset).limit(limit)
+    )
+    return list(result.scalars().all()), total
+
+
 async def update_profile(
     session: AsyncSession,
     user_id: uuid.UUID,

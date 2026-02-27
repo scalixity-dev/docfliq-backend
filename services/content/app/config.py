@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     opensearch_url: str = "http://localhost:9200"
     opensearch_enabled: bool = False
     opensearch_index_prefix: str = "docfliq"
+    # Set to "aws" for Amazon OpenSearch Service (SigV4), "basic" for self-hosted/local
+    opensearch_auth_mode: str = "basic"
+    # AWS region for SigV4 signing (only used when opensearch_auth_mode=aws)
+    opensearch_aws_region: str = "ap-south-1"
+    identity_service_url: str = "http://localhost:8001/api/v1"
 
     @property
     def cors_origins_list(self) -> list[str]:

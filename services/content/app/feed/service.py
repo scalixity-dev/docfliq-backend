@@ -378,6 +378,7 @@ async def get_for_you_feed(
     limit: int = 20,
     offset: int = 0,
     weight_config: WeightConfig | None = None,
+    exclude_author_ids: list[UUID] | None = None,
 ) -> tuple[list[Post], int, bool]:
     """Ranked personalised feed with composite scoring.
 
@@ -397,14 +398,17 @@ async def get_for_you_feed(
         return cold_posts, len(cold_posts), True
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=_FOR_YOU_WINDOW_DAYS)
+    filters = [
+        Post.status.in_(_LIVE_STATUSES),
+        Post.visibility == PostVisibility.PUBLIC,
+        Post.created_at >= cutoff,
+        Post.author_id != user_id,
+    ]
+    if exclude_author_ids:
+        filters.append(Post.author_id.notin_(exclude_author_ids))
     candidates_q = (
         select(Post)
-        .where(
-            Post.status.in_(_LIVE_STATUSES),
-            Post.visibility == PostVisibility.PUBLIC,
-            Post.created_at >= cutoff,
-            Post.author_id != user_id,
-        )
+        .where(*filters)
         .order_by(Post.created_at.desc())
         .limit(500)
     )
@@ -447,6 +451,7 @@ async def get_following_feed(
     depth: int = 0,
     cursor_created_at: datetime | None = None,
     cursor_post_id: UUID | None = None,
+    exclude_author_ids: list[UUID] | None = None,
 ) -> tuple[list[Post], bool]:
     """Strictly reverse-chronological feed from followed accounts.
 
@@ -463,11 +468,14 @@ async def get_following_feed(
 
     page_limit = min(limit, remaining)
 
-    q = select(Post).where(
+    filters = [
         Post.author_id.in_(following_ids),
         Post.status.in_(_LIVE_STATUSES),
         Post.visibility == PostVisibility.PUBLIC,
-    )
+    ]
+    if exclude_author_ids:
+        filters.append(Post.author_id.notin_(exclude_author_ids))
+    q = select(Post).where(*filters)
 
     if cursor_created_at is not None and cursor_post_id is not None:
         q = q.where(

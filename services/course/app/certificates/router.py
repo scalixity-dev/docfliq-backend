@@ -12,6 +12,7 @@ from app.certificates.schemas import (
     CertificateResponse,
     CertificateVerifyResponse,
     GenerateCertificateRequest,
+    GenerateModuleCertificateRequest,
 )
 from app.config import Settings
 from app.database import get_db
@@ -82,3 +83,25 @@ async def get_certificate(
     settings: Settings = Depends(get_settings),
 ) -> CertificateResponse:
     return await controller.get_certificate(db, certificate_id, settings)
+
+
+@router.post(
+    "/enrollments/{enrollment_id}/modules/{module_id}/generate",
+    response_model=CertificateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate module certificate",
+    description="Generates a certificate for completing a specific module. "
+    "Requires all lessons in the module to be completed. "
+    "Course certification_mode must be MODULE or BOTH, and module cert_enabled must be true.",
+)
+async def generate_module_certificate(
+    enrollment_id: UUID,
+    module_id: UUID,
+    body: GenerateModuleCertificateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> CertificateResponse:
+    return await controller.generate_module_certificate(
+        db, enrollment_id, module_id, user_id, body, settings,
+    )

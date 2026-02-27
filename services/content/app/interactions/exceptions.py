@@ -50,4 +50,13 @@ class AlreadyReportedError(Exception):
 
 class SelfReportError(Exception):
     """Raised when a user tries to report themselves."""
+
+
+class IdentityServiceError(Exception):
+    """Raised when proxying a social action to identity service fails."""
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
     pass

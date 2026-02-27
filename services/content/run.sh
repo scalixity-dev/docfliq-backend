@@ -2,40 +2,32 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$BACKEND_ROOT"
 
-echo "🚀 Docfliq Content — setup and run"
-
-# Ensure uv is available
-if ! command -v uv &> /dev/null; then
-    echo "❌ uv is not installed. Install from https://docs.astral.sh/uv/getting-started/installation/"
-    exit 1
-fi
-
-# Create venv if missing
-if [ ! -d ".venv" ]; then
-    echo "📦 Creating virtual environment..."
-    uv venv
-fi
-
-# Install dependencies from requirements.txt (includes editable docfliq-shared)
-echo "📥 Installing dependencies..."
-uv pip install -r requirements.txt --python .venv/bin/python
-
-# Free port 8002 if already in use
+IMAGE_NAME="docfliq-content"
+CONTAINER_NAME="docfliq-content"
 PORT=8002
-if command -v lsof &> /dev/null; then
-  PID=$(lsof -ti:"$PORT" 2>/dev/null) || true
-  if [ -n "$PID" ]; then
-    echo "🔌 Killing process $PID on port $PORT..."
-    kill $PID 2>/dev/null || true
-    sleep 1
-  fi
-elif command -v fuser &> /dev/null; then
-  fuser -k "$PORT/tcp" 2>/dev/null || true
-  sleep 1
+
+# Stop existing container if running
+if docker ps -q -f name="$CONTAINER_NAME" | grep -q .; then
+  echo "Stopping existing $CONTAINER_NAME container..."
+  docker stop "$CONTAINER_NAME" && docker rm "$CONTAINER_NAME"
 fi
 
-# Run content service (port 8002)
-echo "✨ Starting Content service on http://0.0.0.0:8002"
-exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8002 "$@"
+# Build image from backend root (Dockerfile expects shared/ and services/ at context root)
+echo "Building $IMAGE_NAME..."
+docker build -f services/content/Dockerfile -t "$IMAGE_NAME" .
+
+# Run with host networking so it can reach Postgres, Redis, OpenSearch on localhost
+echo "Starting $CONTAINER_NAME on port $PORT..."
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  --network host \
+  --env-file .env \
+  --restart unless-stopped \
+  "$IMAGE_NAME" \
+  uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+
+echo "Content service running at http://localhost:$PORT"
+echo "Logs: docker logs -f $CONTAINER_NAME"

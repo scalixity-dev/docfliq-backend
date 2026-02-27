@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Index, Integer, Numeric, UniqueConstraint
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy import ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.database.postgres import Base
@@ -42,6 +42,17 @@ class Enrollment(Base):
         nullable=True,
     )
     last_position_secs: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    # V2 enrollment features
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    access_code_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    promo_code_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    discount_applied_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    final_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    registration_answers: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    certificate_recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -49,8 +60,8 @@ class Enrollment(Base):
     course = relationship("Course", back_populates="enrollments", lazy="select")
     last_lesson = relationship("Lesson", lazy="select")
     progress_records = relationship("LessonProgress", back_populates="enrollment", lazy="noload")
-    certificate = relationship(
-        "Certificate", back_populates="enrollment", uselist=False, lazy="noload"
+    certificates = relationship(
+        "Certificate", back_populates="enrollment", uselist=True, lazy="noload"
     )
 
     __table_args__ = (

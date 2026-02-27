@@ -16,17 +16,23 @@ from app.dependencies import get_current_user, get_optional_user
 from app.lms import controller
 from app.lms.schemas import (
     CourseDetailResponse,
+    CourseInstructorRequest,
+    CourseInstructorResponse,
     CourseListResponse,
     CourseResponse,
+    CourseTimelineResponse,
     CreateCourseRequest,
     CreateEnrollmentRequest,
     CreateLessonRequest,
     CreateModuleRequest,
+    CreatePromoCodeRequest,
     EnrollmentDetailResponse,
     EnrollmentResponse,
     LessonProgressResponse,
     LessonResponse,
+    ModuleDependencyGraphResponse,
     ModuleResponse,
+    PromoCodeResponse,
     ReorderModulesRequest,
     UpdateCourseRequest,
     UpdateLessonProgressRequest,
@@ -421,3 +427,175 @@ async def get_course_progress(
     user_id: UUID = Depends(get_current_user),
 ) -> EnrollmentDetailResponse:
     return await controller.get_course_progress(db, course_id, user_id)
+
+
+# ======================================================================
+# Instructor management endpoints
+# ======================================================================
+
+
+@router.post(
+    "/courses/{course_id}/instructors",
+    response_model=CourseInstructorResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add instructor to course",
+)
+async def add_instructor(
+    course_id: UUID,
+    body: CourseInstructorRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> CourseInstructorResponse:
+    return await controller.add_instructor(db, course_id, user_id, body)
+
+
+@router.delete(
+    "/courses/{course_id}/instructors/{instructor_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove instructor from course",
+)
+async def remove_instructor(
+    course_id: UUID,
+    instructor_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> None:
+    await controller.remove_instructor(db, course_id, instructor_id, user_id)
+
+
+@router.get(
+    "/courses/{course_id}/instructors",
+    response_model=list[CourseInstructorResponse],
+    summary="List course instructors",
+)
+async def list_instructors(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[CourseInstructorResponse]:
+    return await controller.list_instructors(db, course_id)
+
+
+# ======================================================================
+# Enrollment approval endpoints
+# ======================================================================
+
+
+@router.post(
+    "/enrollments/{enrollment_id}/approve",
+    response_model=EnrollmentResponse,
+    summary="Approve a pending enrollment",
+)
+async def approve_enrollment(
+    enrollment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> EnrollmentResponse:
+    return await controller.approve_enrollment(db, enrollment_id, user_id)
+
+
+@router.post(
+    "/enrollments/{enrollment_id}/reject",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reject a pending enrollment",
+)
+async def reject_enrollment(
+    enrollment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> None:
+    await controller.reject_enrollment(db, enrollment_id, user_id)
+
+
+@router.get(
+    "/courses/{course_id}/enrollments/pending",
+    response_model=list[EnrollmentResponse],
+    summary="List pending enrollment requests",
+)
+async def list_pending_enrollments(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> list[EnrollmentResponse]:
+    return await controller.list_pending_enrollments(db, course_id, user_id)
+
+
+# ======================================================================
+# Promo code endpoints
+# ======================================================================
+
+
+@router.post(
+    "/courses/{course_id}/promo-codes",
+    response_model=PromoCodeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a promo code for a course",
+)
+async def create_promo_code(
+    course_id: UUID,
+    body: CreatePromoCodeRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> PromoCodeResponse:
+    return await controller.create_promo_code(db, course_id, user_id, body)
+
+
+@router.get(
+    "/courses/{course_id}/promo-codes",
+    response_model=list[PromoCodeResponse],
+    summary="List promo codes for a course",
+)
+async def list_promo_codes(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> list[PromoCodeResponse]:
+    return await controller.list_promo_codes(db, course_id, user_id)
+
+
+@router.delete(
+    "/promo-codes/{promo_code_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Deactivate a promo code",
+)
+async def deactivate_promo_code(
+    promo_code_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user),
+) -> None:
+    await controller.deactivate_promo_code(db, promo_code_id, user_id)
+
+
+# ======================================================================
+# Timeline endpoint
+# ======================================================================
+
+
+@router.get(
+    "/courses/{course_id}/timeline",
+    response_model=CourseTimelineResponse,
+    summary="Get course timeline (flat ordered lesson list)",
+)
+async def get_course_timeline(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> CourseTimelineResponse:
+    return await controller.get_course_timeline(db, course_id)
+
+
+# ======================================================================
+# Module dependency graph
+# ======================================================================
+
+
+@router.get(
+    "/courses/{course_id}/modules/dependency-graph",
+    response_model=ModuleDependencyGraphResponse,
+    summary="Get module dependency graph",
+    description="Returns nodes (modules) and edges (dependencies) for visual rendering. "
+    "Edges are auto-generated for SEQUENTIAL mode, from prerequisite_module_ids for CUSTOM mode.",
+)
+async def get_module_dependency_graph(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> ModuleDependencyGraphResponse:
+    return await controller.get_module_dependency_graph(db, course_id)

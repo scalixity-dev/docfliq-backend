@@ -19,7 +19,9 @@ from sqlalchemy.orm import selectinload
 from app.config import Settings
 from app.exceptions import (
     ContentNotAccessibleError,
+    LessonGatedError,
     LessonNotFoundError,
+    ModuleLockedError,
     NotEnrolledError,
     ScormSessionAlreadyCompletedError,
     ScormSessionNotFoundError,
@@ -31,10 +33,12 @@ from app.models.enums import (
     EnrollmentStatus,
     LessonProgressStatus,
     LessonType,
+    ModuleUnlockMode,
     ScormSessionStatus,
 )
 from app.models.lesson import Lesson
 from app.models.lesson_progress import LessonProgress
+from app.models.scorm_api_log import ScormApiLog
 from app.models.scorm_session import ScormSession
 from app.player import cache as player_cache
 from app.player.cloudfront import generate_signed_cookies, generate_signed_url
@@ -68,6 +72,16 @@ async def get_lesson_content(
 
     if enrollment is not None and enrollment.status == EnrollmentStatus.DROPPED:
         raise NotEnrolledError()
+
+    # Module unlock check: verify the module is accessible
+    if enrollment is not None:
+        is_unlocked = await check_module_unlocked(db, enrollment, module, course)
+        if not is_unlocked:
+            raise ModuleLockedError(str(module.module_id))
+
+    # Gating check: if lesson is gated, verify prerequisites
+    if enrollment is not None and lesson.is_gated:
+        await _check_gating(db, enrollment, lesson, module)
 
     result: dict = {
         "lesson_id": lesson.lesson_id,
@@ -122,6 +136,13 @@ async def get_lesson_content(
         )
     elif lesson.lesson_type == LessonType.TEXT:
         result["content_body"] = lesson.content_body
+    elif lesson.lesson_type == LessonType.PRESENTATION and lesson.content_url:
+        result["signed_content_url"] = generate_signed_url(
+            f"https://{settings.cloudfront_domain}/{lesson.content_url}",
+            settings.cloudfront_key_pair_id,
+            settings.cloudfront_private_key_path,
+            expiry,
+        )
     elif lesson.lesson_type == LessonType.SCORM and enrollment is not None:
         session = await _get_or_create_scorm_session(db, enrollment.enrollment_id, lesson)
         result["scorm_session_id"] = session.session_id
@@ -326,6 +347,7 @@ async def commit_scorm_data(
     completion_status: str | None,
     success_status: str | None,
     total_time_secs: int | None,
+    suspend_data: str | None = None,
     redis: Redis | None = None,
 ) -> ScormSession:
     """Receive SCORM runtime API commit (LMSCommit / Commit)."""
@@ -345,6 +367,8 @@ async def commit_scorm_data(
         session.score_min = score_min
     if total_time_secs is not None:
         session.total_time_secs = total_time_secs
+    if suspend_data is not None:
+        session.suspend_data = suspend_data
 
     if completion_status == "completed":
         session.status = ScormSessionStatus.COMPLETED
@@ -404,10 +428,14 @@ async def _recalculate_weighted_progress(
             "weights": {"VIDEO": 1.0, "PDF": 1.0, "TEXT": 0.5, "QUIZ": 1.5, "SCORM": 1.0}
         }
     """
+    # Only count lessons from required modules toward completion
     lesson_stmt = (
         select(Lesson)
         .join(CourseModule, Lesson.module_id == CourseModule.module_id)
-        .where(CourseModule.course_id == course.course_id)
+        .where(
+            CourseModule.course_id == course.course_id,
+            CourseModule.is_required == True,  # noqa: E712
+        )
     )
     lesson_result = await db.execute(lesson_stmt)
     lessons = list(lesson_result.scalars().all())
@@ -450,11 +478,18 @@ async def _recalculate_weighted_progress(
             lesson_score = min(pp / doc_threshold, Decimal("1")) if doc_threshold > 0 else Decimal("0")
         elif lt == "TEXT":
             lesson_score = Decimal("1") if progress.status == LessonProgressStatus.COMPLETED else Decimal("0")
-        elif lt == "QUIZ":
+        elif lt == "QUIZ" or lt == "ASSESSMENT":
             if progress.quiz_score is not None:
                 threshold = quiz_threshold if quiz_threshold is not None else 70
                 lesson_score = Decimal("1") if progress.quiz_score >= threshold else Decimal("0")
         elif lt == "SCORM":
+            lesson_score = Decimal("1") if progress.status == LessonProgressStatus.COMPLETED else Decimal("0")
+        elif lt == "PRESENTATION":
+            # Slides use pages_pct for progress (slide_count → total_pages)
+            pp = progress.pages_pct or Decimal("0")
+            lesson_score = min(pp / doc_threshold, Decimal("1")) if doc_threshold > 0 else Decimal("0")
+        elif lt == "SURVEY":
+            # Surveys: completed once submitted
             lesson_score = Decimal("1") if progress.status == LessonProgressStatus.COMPLETED else Decimal("0")
 
         earned_weight += weight * lesson_score
@@ -466,11 +501,15 @@ async def _recalculate_weighted_progress(
 
     enrollment.progress_pct = new_pct
 
-    if new_pct >= pct_required and enrollment.status != EnrollmentStatus.COMPLETED:
+    was_completed = enrollment.status == EnrollmentStatus.COMPLETED
+    if new_pct >= pct_required and not was_completed:
         enrollment.status = EnrollmentStatus.COMPLETED
         enrollment.completed_at = datetime.now(timezone.utc)
 
     await db.flush()
+
+    # Auto-issue module certificates on each progress update (idempotent)
+    await _trigger_certificate_checks(db, enrollment, course)
 
 
 # ---------------------------------------------------------------------------
@@ -544,10 +583,13 @@ async def get_detailed_course_progress(
             if module_total > 0
             else Decimal("0")
         )
+        is_locked = not await check_module_unlocked(db, enrollment, module, course)
         module_responses.append({
             "module_id": module.module_id,
             "title": module.title,
             "progress_pct": module_pct,
+            "is_locked": is_locked,
+            "is_required": module.is_required,
             "lessons": lesson_details,
         })
 
@@ -556,6 +598,7 @@ async def get_detailed_course_progress(
         "course_id": course_id,
         "overall_progress_pct": enrollment.progress_pct,
         "status": enrollment.status.value,
+        "module_unlock_mode": course.module_unlock_mode.value,
         "modules": module_responses,
         "completion_logic": course.completion_logic or {},
     }
@@ -618,6 +661,268 @@ async def _upsert_lesson_progress(
         db.add(progress)
         await db.flush()
     return progress
+
+
+# ---------------------------------------------------------------------------
+# Presentation heartbeat
+# ---------------------------------------------------------------------------
+
+
+async def process_presentation_heartbeat(
+    db: AsyncSession,
+    lesson_id: UUID,
+    user_id: UUID,
+    *,
+    current_slide: int,
+    slides_viewed: list[int],
+    redis: Redis | None = None,
+) -> dict:
+    """Track presentation / slide viewing progress."""
+    lesson = await db.get(Lesson, lesson_id)
+    if lesson is None:
+        raise LessonNotFoundError(str(lesson_id))
+    if lesson.lesson_type != LessonType.PRESENTATION:
+        raise ContentNotAccessibleError()
+
+    module = await db.get(CourseModule, lesson.module_id)
+    enrollment = await _get_enrollment(db, user_id, module.course_id)
+    if enrollment is None:
+        raise NotEnrolledError()
+
+    total_slides = lesson.slide_count or lesson.total_pages or 1
+    unique_viewed = sorted(set(slides_viewed))
+    slides_pct = Decimal(str(round(min(len(unique_viewed) / total_slides * 100, 100), 2)))
+
+    if redis is not None:
+        try:
+            await player_cache.set_resume_position(
+                user_id, lesson_id, current_slide, LessonType.PRESENTATION.value, redis,
+            )
+        except Exception:
+            pass
+
+    progress = await _upsert_lesson_progress(db, enrollment.enrollment_id, lesson_id)
+    progress.pages_viewed = {"viewed": unique_viewed, "total": total_slides}
+    progress.pages_pct = slides_pct
+
+    course = await db.get(Course, enrollment.course_id)
+    doc_threshold = _get_doc_completion_threshold(course.completion_logic)
+    if slides_pct >= doc_threshold and progress.status != LessonProgressStatus.COMPLETED:
+        progress.status = LessonProgressStatus.COMPLETED
+        progress.completed_at = datetime.now(timezone.utc)
+    elif progress.status == LessonProgressStatus.NOT_STARTED:
+        progress.status = LessonProgressStatus.IN_PROGRESS
+
+    await db.flush()
+    await _recalculate_weighted_progress(db, enrollment, course)
+
+    return {
+        "slides_viewed": unique_viewed,
+        "slides_pct": float(slides_pct),
+        "is_completed": progress.status == LessonProgressStatus.COMPLETED,
+    }
+
+
+# ---------------------------------------------------------------------------
+# SCORM runtime data & API logging
+# ---------------------------------------------------------------------------
+
+
+async def get_scorm_runtime_data(
+    db: AsyncSession,
+    session_id: UUID,
+    user_id: UUID,
+) -> ScormSession:
+    """Return SCORM session with tracking_data, suspend_data, and api_logs."""
+    session = await db.get(ScormSession, session_id)
+    if session is None:
+        raise ScormSessionNotFoundError(str(session_id))
+    return session
+
+
+async def log_scorm_api_call(
+    db: AsyncSession,
+    session_id: UUID,
+    user_id: UUID,
+    *,
+    api_call: str,
+    parameter: str | None = None,
+    value: str | None = None,
+    error_code: str | None = None,
+) -> ScormApiLog:
+    """Record a single SCORM JS API call for debugging."""
+    session = await db.get(ScormSession, session_id)
+    if session is None:
+        raise ScormSessionNotFoundError(str(session_id))
+
+    log = ScormApiLog(
+        session_id=session_id,
+        api_call=api_call,
+        parameter=parameter,
+        value=value,
+        error_code=error_code,
+    )
+    db.add(log)
+    await db.flush()
+    await db.refresh(log)
+    return log
+
+
+# ---------------------------------------------------------------------------
+# Module unlock logic
+# ---------------------------------------------------------------------------
+
+
+async def check_module_unlocked(
+    db: AsyncSession,
+    enrollment: Enrollment,
+    module: CourseModule,
+    course: Course,
+) -> bool:
+    """Check if a module is accessible based on the course unlock mode."""
+    mode = course.module_unlock_mode
+    if mode == ModuleUnlockMode.ALL_UNLOCKED:
+        return True
+    if mode == ModuleUnlockMode.SEQUENTIAL:
+        return await _check_sequential_unlock(db, enrollment, module, course)
+    if mode == ModuleUnlockMode.CUSTOM:
+        return await _check_custom_unlock(db, enrollment, module)
+    return True
+
+
+async def _check_sequential_unlock(
+    db: AsyncSession,
+    enrollment: Enrollment,
+    module: CourseModule,
+    course: Course,
+) -> bool:
+    """Sequential mode: all prior modules (by sort_order) must be fully completed."""
+    if module.sort_order == 0:
+        return True  # First module always unlocked
+
+    prior_stmt = (
+        select(CourseModule.module_id)
+        .where(
+            CourseModule.course_id == course.course_id,
+            CourseModule.sort_order < module.sort_order,
+        )
+    )
+    result = await db.execute(prior_stmt)
+    prior_ids = [row[0] for row in result.all()]
+    if not prior_ids:
+        return True
+
+    return await _all_modules_completed(db, enrollment.enrollment_id, prior_ids)
+
+
+async def _check_custom_unlock(
+    db: AsyncSession,
+    enrollment: Enrollment,
+    module: CourseModule,
+) -> bool:
+    """Custom mode: all prerequisite modules must be fully completed."""
+    prereqs = module.prerequisite_module_ids
+    if not prereqs:
+        return True
+    return await _all_modules_completed(db, enrollment.enrollment_id, prereqs)
+
+
+async def _all_modules_completed(
+    db: AsyncSession,
+    enrollment_id: UUID,
+    module_ids: list[UUID],
+) -> bool:
+    """Check if all lessons in the given modules are completed."""
+    from sqlalchemy import func as sa_func
+
+    total_stmt = (
+        select(sa_func.count())
+        .select_from(Lesson)
+        .where(Lesson.module_id.in_(module_ids))
+    )
+    total = await db.scalar(total_stmt) or 0
+    if total == 0:
+        return True
+
+    completed_stmt = (
+        select(sa_func.count())
+        .select_from(LessonProgress)
+        .join(Lesson, LessonProgress.lesson_id == Lesson.lesson_id)
+        .where(
+            LessonProgress.enrollment_id == enrollment_id,
+            Lesson.module_id.in_(module_ids),
+            LessonProgress.status == LessonProgressStatus.COMPLETED,
+        )
+    )
+    completed = await db.scalar(completed_stmt) or 0
+    return completed >= total
+
+
+async def _trigger_certificate_checks(
+    db: AsyncSession,
+    enrollment: Enrollment,
+    course: Course,
+) -> None:
+    """Auto-issue module certificates if certification_mode allows and recipient name is cached."""
+    from app.models.enums import CertificationMode
+
+    cert_mode = course.certification_mode
+    if cert_mode not in (CertificationMode.MODULE, CertificationMode.BOTH):
+        return
+    if not enrollment.certificate_recipient_name:
+        return
+
+    try:
+        from app.certificates.service import check_and_issue_module_certificates
+        from app.config import get_settings
+
+        settings = get_settings()
+        await check_and_issue_module_certificates(db, enrollment, course, settings)
+    except Exception:
+        pass  # Best-effort; don't block progress updates
+
+
+# ---------------------------------------------------------------------------
+# Gating check
+# ---------------------------------------------------------------------------
+
+
+async def _check_gating(
+    db: AsyncSession,
+    enrollment: Enrollment,
+    lesson: Lesson,
+    module: CourseModule,
+) -> None:
+    """Ensure all prior lessons in the module are completed before a gated lesson."""
+    prior_lessons_stmt = (
+        select(Lesson)
+        .where(
+            Lesson.module_id == module.module_id,
+            Lesson.sort_order < lesson.sort_order,
+        )
+        .order_by(Lesson.sort_order)
+    )
+    result = await db.execute(prior_lessons_stmt)
+    prior_lessons = list(result.scalars().all())
+
+    if not prior_lessons:
+        return
+
+    progress_stmt = select(LessonProgress).where(
+        LessonProgress.enrollment_id == enrollment.enrollment_id,
+        LessonProgress.lesson_id.in_([l.lesson_id for l in prior_lessons]),
+    )
+    prog_result = await db.execute(progress_stmt)
+    progress_map = {p.lesson_id: p for p in prog_result.scalars().all()}
+
+    for prior in prior_lessons:
+        p = progress_map.get(prior.lesson_id)
+        if p is None or p.status != LessonProgressStatus.COMPLETED:
+            # Check if gating requires a passing score
+            if lesson.gate_passing_score is not None and p is not None and p.quiz_score is not None:
+                if p.quiz_score >= lesson.gate_passing_score:
+                    continue
+            raise LessonGatedError(str(lesson.lesson_id))
 
 
 async def _get_resume(

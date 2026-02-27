@@ -2,19 +2,27 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Index, Integer, Numeric, SmallInteger, String, Text, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID  # JSONB still used for completion_logic
+from sqlalchemy import Boolean, Index, Integer, Numeric, SmallInteger, String, Text, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.database.postgres import Base
 
 from .enums import (
+    CertificationMode,
+    CompletionMode,
     CourseStatus,
     CourseVisibility,
+    ModuleUnlockMode,
     PricingType,
+    ScormImportStatus,
+    certification_mode_enum,
+    completion_mode_enum,
     course_status_enum,
     course_visibility_enum,
+    module_unlock_mode_enum,
     pricing_type_enum,
+    scorm_import_status_enum,
 )
 
 
@@ -58,6 +66,31 @@ class Course(Base):
         course_visibility_enum, nullable=False, default=CourseVisibility.PUBLIC
     )
     scorm_package_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # ── V2 Setup features ────────────────────────────────────────────────
+    custom_metadata: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    self_registration_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    access_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    discount_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    registration_questions: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    eligibility_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
+    scorm_import_status: Mapped[ScormImportStatus | None] = mapped_column(
+        scorm_import_status_enum, nullable=True
+    )
+    scorm_import_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certificate_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # ── Completion & certification ─────────────────────────────────────
+    completion_mode: Mapped[CompletionMode] = mapped_column(
+        completion_mode_enum, nullable=False, default=CompletionMode.DEFAULT
+    )
+    module_unlock_mode: Mapped[ModuleUnlockMode] = mapped_column(
+        module_unlock_mode_enum, nullable=False, default=ModuleUnlockMode.ALL_UNLOCKED
+    )
+    certification_mode: Mapped[CertificationMode] = mapped_column(
+        certification_mode_enum, nullable=False, default=CertificationMode.COURSE
+    )
+    cert_template: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cert_custom_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -70,6 +103,9 @@ class Course(Base):
 
     modules = relationship("CourseModule", back_populates="course", lazy="noload")
     enrollments = relationship("Enrollment", back_populates="course", lazy="noload")
+    instructors = relationship("CourseInstructor", back_populates="course", lazy="noload")
+    promo_codes_rel = relationship("PromoCode", back_populates="course", lazy="noload")
+    surveys = relationship("Survey", back_populates="course", lazy="noload")
 
     __table_args__ = (
         Index("ix_courses_instructor_id", "instructor_id"),

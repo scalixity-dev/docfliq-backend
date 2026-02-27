@@ -11,14 +11,18 @@ from app.certificates import service
 from app.certificates.schemas import (
     CertificateResponse,
     CertificateVerifyResponse,
+    GenerateModuleCertificateRequest,
     GenerateCertificateRequest,
 )
 from app.config import Settings
 from app.exceptions import (
     CertificateAlreadyIssuedError,
     CertificateNotFoundError,
+    CertificationDisabledError,
     CourseNotCompletedError,
     EnrollmentNotFoundError,
+    ModuleCertificateAlreadyIssuedError,
+    ModuleNotFoundError,
 )
 
 
@@ -35,6 +39,18 @@ def _handle_domain_error(exc: Exception) -> HTTPException:
             status_code=status.HTTP_409_CONFLICT,
             detail="Certificate already issued for this enrollment.",
         )
+    if isinstance(exc, ModuleCertificateAlreadyIssuedError):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Module certificate already issued.",
+        )
+    if isinstance(exc, CertificationDisabledError):
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Certification is disabled for this course or module.",
+        )
+    if isinstance(exc, ModuleNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error.")
 
 
@@ -92,3 +108,24 @@ async def verify_certificate(
 ) -> CertificateVerifyResponse:
     result = await service.verify_certificate(db, qr_code)
     return CertificateVerifyResponse(**result)
+
+
+async def generate_module_certificate(
+    db: AsyncSession,
+    enrollment_id: UUID,
+    module_id: UUID,
+    user_id: UUID,
+    body: GenerateModuleCertificateRequest,
+    settings: Settings,
+) -> CertificateResponse:
+    try:
+        cert = await service.generate_module_certificate(
+            db, enrollment_id, module_id, user_id,
+            recipient_name=body.recipient_name,
+            settings=settings,
+        )
+        resp = CertificateResponse.model_validate(cert)
+        resp.verification_url = f"{settings.certificate_base_url}/{cert.qr_verification_code}"
+        return resp
+    except Exception as exc:
+        raise _handle_domain_error(exc) from exc

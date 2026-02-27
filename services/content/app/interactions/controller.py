@@ -13,6 +13,7 @@ from app.interactions.exceptions import (
     CommentAccessDeniedError,
     CommentNotFoundError,
     CommentRateLimitError,
+    IdentityServiceError,
     NotBookmarkedError,
     NotLikedError,
     PostNotFoundError,
@@ -31,8 +32,12 @@ from app.interactions.schemas import (
     RepostCreate,
     RepostResponse,
     ShareResponse,
+    SocialActionResponse,
     UpdateCommentRequest,
+    UserReportResponse,
 )
+from app.models.post import Post
+from app.notifications import service as notifications_service
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +53,25 @@ async def like_post(post_id: UUID, user_id: UUID, db: AsyncSession) -> LikeRespo
             status_code=status.HTTP_409_CONFLICT,
             detail="You have already liked this post.",
         )
+    # Best-effort notification for post author
+    try:
+        post = await db.get(Post, post_id)
+        if post and post.author_id != user_id:
+            snippet = (post.body or "")[:160] or None
+            context = {
+                "snippet": snippet,
+                "link_url": f"/home?post={post.post_id}",
+            }
+            await notifications_service.create_notification(
+                user_id=post.author_id,
+                actor_id=user_id,
+                type_="like",
+                post_id=post.post_id,
+                context=context,
+                db=db,
+            )
+    except Exception:  # noqa: BLE001
+        pass
     return LikeResponse.model_validate(like)
 
 
@@ -120,6 +144,25 @@ async def create_comment(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many comments. Limit is 5 per minute.",
         )
+    # Best-effort notification for post author
+    try:
+        post = await db.get(Post, post_id)
+        if post and post.author_id != author_id:
+            snippet = (payload.body or "")[:160] or None
+            context = {
+                "snippet": snippet,
+                "link_url": f"/home?post={post.post_id}",
+            }
+            await notifications_service.create_notification(
+                user_id=post.author_id,
+                actor_id=author_id,
+                type_="comment",
+                post_id=post.post_id,
+                context=context,
+                db=db,
+            )
+    except Exception:  # noqa: BLE001
+        pass
     return CommentResponse.model_validate(comment)
 
 
@@ -288,3 +331,72 @@ async def report_comment(
         db=db,
     )
     return ReportResponse.model_validate(report)
+
+
+# ---------------------------------------------------------------------------
+# User moderation controllers (proxied via identity service)
+# ---------------------------------------------------------------------------
+
+
+async def block_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> SocialActionResponse:
+    try:
+        data = await service.block_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return SocialActionResponse.model_validate(data)
+
+
+async def unblock_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    try:
+        await service.unblock_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def mute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> SocialActionResponse:
+    try:
+        data = await service.mute_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return SocialActionResponse.model_validate(data)
+
+
+async def unmute_user(
+    user_id: UUID,
+    access_token: str,
+    identity_base_url: str,
+) -> None:
+    try:
+        await service.unmute_user(user_id, access_token, identity_base_url)
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def report_user(
+    user_id: UUID,
+    payload: CreateReportRequest,
+    access_token: str,
+    identity_base_url: str,
+) -> UserReportResponse:
+    try:
+        data = await service.report_user(
+            user_id,
+            payload,
+            access_token,
+            identity_base_url,
+        )
+    except IdentityServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return UserReportResponse.model_validate(data)

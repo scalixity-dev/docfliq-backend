@@ -1,4 +1,5 @@
 import json
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -53,3 +54,8 @@ class Settings(BaseSettings):
     # Certificate generation
     certificate_signing_secret: str = "change-me-certificate-secret"
     certificate_base_url: str = "https://docfliq.com/certificates"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
