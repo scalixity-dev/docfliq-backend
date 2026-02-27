@@ -27,6 +27,7 @@ class MediaItem(BaseModel):
     url: str = Field(description="CDN URL of the processed media asset.")
     type: str = Field(description="MIME type, e.g. 'image/webp' or 'video/mp4'.")
     thumbnail: str | None = Field(default=None, description="Thumbnail URL (video posts only).")
+    asset_id: str | None = Field(default=None, description="Media service asset ID for playback metadata lookup.")
 
 
 class LinkPreviewObject(BaseModel):

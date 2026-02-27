@@ -34,7 +34,7 @@ async def get_profile_for_viewer(
     from app.social_graph.models import Block
 
     blocked_sq = sa.exists(
-        sa.select(Block.id).where(
+        sa.select(Block.block_id).where(
             Block.blocker_id == user_id,
             Block.blocked_id == viewer_id,
         )

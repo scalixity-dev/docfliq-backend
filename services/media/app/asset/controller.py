@@ -18,6 +18,7 @@ from app.asset.schemas import (
     AssetResponse,
     ConfirmUploadRequest,
     MessageResponse,
+    PlaybackInfoResponse,
     SignedUrlResponse,
     UploadRequest,
     UploadResponse,
@@ -203,6 +204,48 @@ async def delete_asset(
     if not deleted:
         raise AssetNotFound()
     return MessageResponse(message="Asset deleted successfully.")
+
+
+async def get_playback_info(
+    asset_id: str,
+    db: AsyncSession,
+    settings: Settings,
+) -> PlaybackInfoResponse:
+    """Get video playback metadata (public, no auth).
+
+    Converts internal s3:// URLs to public stream-proxy / serve URLs.
+    """
+    uid = uuid.UUID(asset_id)
+    asset = await service.get_asset_by_id(db, uid)
+    if asset is None:
+        raise AssetNotFound()
+
+    bucket_prefix = f"s3://{settings.s3_bucket_media}/"
+
+    hls_url = None
+    if asset.hls_url and asset.transcode_status == TranscodeStatus.COMPLETED:
+        hls_s3_key = asset.hls_url.replace(bucket_prefix, "")
+        hls_url = f"/api/v1/media/stream/{hls_s3_key}"
+
+    thumbnail_url = None
+    if asset.thumbnail_url:
+        thumb_key = asset.thumbnail_url.replace(bucket_prefix, "")
+        thumbnail_url = f"/api/v1/media/serve/{thumb_key}"
+
+    original_url = None
+    if asset.original_url:
+        orig_key = asset.original_url.replace(bucket_prefix, "")
+        original_url = f"/api/v1/media/serve/{orig_key}"
+
+    return PlaybackInfoResponse(
+        asset_id=asset.asset_id,
+        transcode_status=asset.transcode_status,
+        hls_url=hls_url,
+        thumbnail_url=thumbnail_url,
+        original_url=original_url,
+        duration_secs=getattr(asset, "duration_secs", None),
+        resolution=getattr(asset, "resolution", None),
+    )
 
 
 async def _process_image_background(
