@@ -1,0 +1,1324 @@
+{
+  "info": {
+    "name": "Docfliq Content Service",
+    "description": "Complete API collection for the Docfliq content microservice.\n\n**Base URL:** `{{base_url}}` (default: http://localhost:8000)\n\n**Auth:** Set `{{auth_token}}` with a valid JWT Bearer token for authenticated requests.\n\n**Domains:**\n- CMS — Posts & Channels\n- Feed — Home, For-You, Trending, Following\n- Search — Posts, People, Courses, Webinars\n- Interactions — Likes, Comments, Bookmarks, Reposts, Shares, Reports\n- Experiments — Cohorts, A/B Experiments, Events\n- Health",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "docfliq-content-service-v1"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the content service"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT Bearer token for authenticated requests"
+    },
+    {
+      "key": "post_id",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "channel_id",
+      "value": "00000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "comment_id",
+      "value": "00000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "00000000-0000-0000-0000-000000000004",
+      "type": "string"
+    },
+    {
+      "key": "cohort_id",
+      "value": "00000000-0000-0000-0000-000000000005",
+      "type": "string"
+    },
+    {
+      "key": "experiment_id",
+      "value": "00000000-0000-0000-0000-000000000006",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "description": "Service health check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Returns service health status. No auth required."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"status\": \"ok\", \"service\": \"content\"}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CMS / Posts",
+      "description": "Post creation, editing, versioning, and admin moderation.",
+      "item": [
+        {
+          "name": "Create Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content_type\": \"TEXT\",\n  \"title\": \"My first post\",\n  \"body\": \"This is the post body content.\",\n  \"visibility\": \"PUBLIC\",\n  \"status\": \"DRAFT\",\n  \"specialty_tags\": [\"cardiology\", \"research\"],\n  \"media_urls\": null,\n  \"link_preview\": null,\n  \"channel_id\": null\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts"]
+            },
+            "description": "Create a new post. `content_type` is required. For LINK posts, `link_preview` is required. Auth required.\n\n**content_type values:** TEXT, IMAGE, VIDEO, LINK, WEBINAR_CARD, COURSE_CARD\n\n**status:** DRAFT (default) or PUBLISHED\n\n**visibility:** PUBLIC (default), CONNECTIONS_ONLY, PRIVATE"
+          }
+        },
+        {
+          "name": "Get Post by ID",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}"]
+            },
+            "description": "Fetch a post by its UUID. Auth is optional."
+          }
+        },
+        {
+          "name": "Update Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated title\",\n  \"body\": \"Updated body content.\",\n  \"visibility\": \"PUBLIC\",\n  \"specialty_tags\": [\"oncology\"]\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}"]
+            },
+            "description": "Update an existing post. Author only. If post is PUBLISHED, status becomes EDITED and a snapshot is saved to post_versions. All fields are optional."
+          }
+        },
+        {
+          "name": "Delete Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}"]
+            },
+            "description": "Soft-delete a post (sets status = SOFT_DELETED, deleted_at = now()). Author only. Returns 204 No Content."
+          }
+        },
+        {
+          "name": "Publish Draft Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}", "publish"]
+            },
+            "description": "Transition a DRAFT post to PUBLISHED. Author only."
+          }
+        },
+        {
+          "name": "Hide Post (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}/hide",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}", "hide"]
+            },
+            "description": "Admin action to hide a post (sets status = HIDDEN_BY_ADMIN). RBAC enforced at API gateway."
+          }
+        },
+        {
+          "name": "List Post Versions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}/versions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}", "versions"]
+            },
+            "description": "List edit history snapshots for a post. Author only."
+          }
+        },
+        {
+          "name": "Restore Post Version",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version_number\": 1\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/posts/{{post_id}}/restore",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "posts", "{{post_id}}", "restore"]
+            },
+            "description": "Restore a post to a specific historical version. Author only. `version_number` must be >= 1."
+          }
+        },
+        {
+          "name": "List My Posts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/my-posts?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "my-posts"],
+              "query": [
+                {"key": "cursor", "value": "", "description": "Opaque pagination cursor from previous response", "disabled": true},
+                {"key": "limit", "value": "20", "description": "Items per page (1–100)"}
+              ]
+            },
+            "description": "List the authenticated user's own posts. Cursor-paginated."
+          }
+        }
+      ]
+    },
+    {
+      "name": "CMS / Channels",
+      "description": "Channel creation and management.",
+      "item": [
+        {
+          "name": "Create Channel",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cardiology Insights\",\n  \"slug\": \"cardiology-insights\",\n  \"description\": \"A channel for cardiology professionals.\",\n  \"logo_url\": \"https://cdn.example.com/logos/cardiology.png\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/channels",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "channels"]
+            },
+            "description": "Create a new channel. The authenticated user becomes the owner. `slug` is auto-generated from `name` if not provided."
+          }
+        },
+        {
+          "name": "List Channels",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/channels?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "channels"],
+              "query": [
+                {"key": "limit", "value": "20", "description": "Items per page (1–100)"},
+                {"key": "offset", "value": "0", "description": "Offset for pagination"}
+              ]
+            },
+            "description": "List all channels. No auth required. Offset-paginated."
+          }
+        },
+        {
+          "name": "Get Channel by ID",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/channels/{{channel_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "channels", "{{channel_id}}"]
+            },
+            "description": "Fetch a channel by its UUID. No auth required."
+          }
+        },
+        {
+          "name": "Update Channel",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Channel Name\",\n  \"description\": \"Updated description.\",\n  \"logo_url\": \"https://cdn.example.com/logos/new.png\",\n  \"is_active\": true\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/channels/{{channel_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "channels", "{{channel_id}}"]
+            },
+            "description": "Update channel details. Owner only. All fields are optional."
+          }
+        },
+        {
+          "name": "Deactivate Channel",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cms/channels/{{channel_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cms", "channels", "{{channel_id}}"]
+            },
+            "description": "Deactivate a channel (soft delete). Owner only. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feed",
+      "description": "Public, personalised, and channel-specific feeds.",
+      "item": [
+        {
+          "name": "Public Home Feed",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed"],
+              "query": [
+                {"key": "limit", "value": "20", "description": "Items per page (1–100)"},
+                {"key": "offset", "value": "0", "description": "Page offset"}
+              ]
+            },
+            "description": "Public home feed showing recent published posts. No auth required."
+          }
+        },
+        {
+          "name": "Get Single Published Post (Feed)",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/posts/{{post_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "posts", "{{post_id}}"]
+            },
+            "description": "Fetch a single published post for public view. No auth required."
+          }
+        },
+        {
+          "name": "Channel Feed",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/channels/{{channel_id}}/posts?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "channels", "{{channel_id}}", "posts"],
+              "query": [
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Get all published posts for a specific channel. No auth required."
+          }
+        },
+        {
+          "name": "User Profile Feed",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/users/{{user_id}}/posts?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "users", "{{user_id}}", "posts"],
+              "query": [
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Get published posts for a specific user's profile. No auth required."
+          }
+        },
+        {
+          "name": "For You Feed",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/for-you?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "for-you"],
+              "query": [
+                {"key": "interests", "value": "cardiology", "description": "Repeatable. User interest tags for personalisation.", "disabled": true},
+                {"key": "cohort_ids", "value": "", "description": "Repeatable. Cohort UUIDs for experiment-based personalisation.", "disabled": true},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0", "description": "Max 480"}
+              ]
+            },
+            "description": "Personalised ranked feed using weighted scoring (recency, specialty affinity, cold-start). Auth required.\n\nTo pass multiple interests: add multiple `interests=` query params."
+          }
+        },
+        {
+          "name": "Following Feed",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/following?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "following"],
+              "query": [
+                {"key": "following_ids", "value": "", "description": "Repeatable. UUIDs of users being followed.", "disabled": true},
+                {"key": "cursor", "value": "", "description": "Opaque pagination cursor from previous response.", "disabled": true},
+                {"key": "depth", "value": "0", "description": "Total posts loaded so far (for infinite scroll tracking).", "disabled": true},
+                {"key": "limit", "value": "20"}
+              ]
+            },
+            "description": "Cursor-paginated feed from followed users. Auth required.\n\nPass `following_ids` as repeated query params (e.g. `following_ids=uuid1&following_ids=uuid2`)."
+          }
+        },
+        {
+          "name": "Trending Posts (48h)",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/trending?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "trending"],
+              "query": [
+                {"key": "limit", "value": "20", "description": "Items (1–50)"}
+              ]
+            },
+            "description": "Top trending posts from the last 48 hours. No auth required."
+          }
+        },
+        {
+          "name": "List Editor Picks (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/editor-picks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "editor-picks"]
+            },
+            "description": "List all editor-picked posts. Admin only (enforced at gateway)."
+          }
+        },
+        {
+          "name": "Add Editor Pick (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"post_id\": \"{{post_id}}\",\n  \"priority\": 1\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/editor-picks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "editor-picks"]
+            },
+            "description": "Pin a post as an editor pick. Admin only. Higher `priority` value = higher ranking."
+          }
+        },
+        {
+          "name": "Remove Editor Pick (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/feed/editor-picks/{{post_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "feed", "editor-picks", "{{post_id}}"]
+            },
+            "description": "Remove a post from editor picks. Admin only. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "description": "Unified and scoped search (OpenSearch primary, Postgres GIN fallback).",
+      "item": [
+        {
+          "name": "Unified Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search?q=cardiology&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search"],
+              "query": [
+                {"key": "q", "value": "cardiology", "description": "Search query (required, 1–200 chars)"},
+                {"key": "limit", "value": "5", "description": "Results per type (1–20, default 5)"}
+              ]
+            },
+            "description": "LinkedIn-style unified search returning posts, channels, and people in a single response. No auth required."
+          }
+        },
+        {
+          "name": "Post Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/posts?q=cardiology&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "posts"],
+              "query": [
+                {"key": "q", "value": "cardiology", "description": "Keyword query (2–200 chars)", "disabled": false},
+                {"key": "tags", "value": "", "description": "Repeatable specialty tag filter (e.g. tags=cardiology&tags=surgery)", "disabled": true},
+                {"key": "type", "value": "", "description": "ContentType filter: TEXT, IMAGE, VIDEO, LINK, WEBINAR_CARD, COURSE_CARD", "disabled": true},
+                {"key": "channel_id", "value": "", "description": "Filter by channel UUID", "disabled": true},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Search posts by keyword, tags, type, or channel. Returns facets when OpenSearch is enabled."
+          }
+        },
+        {
+          "name": "Channel Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/channels?q=cardiology&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "channels"],
+              "query": [
+                {"key": "q", "value": "cardiology", "description": "Keyword query (2–200 chars)"},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Search channels by name/description."
+          }
+        },
+        {
+          "name": "Autocomplete Suggest",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/suggest?q=card&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "suggest"],
+              "query": [
+                {"key": "q", "value": "card", "description": "Partial query for autocomplete (1–100 chars)"},
+                {"key": "limit", "value": "10", "description": "Max suggestions (1–20)"}
+              ]
+            },
+            "description": "Typeahead/autocomplete suggestions. Intended for search-as-you-type UI."
+          }
+        },
+        {
+          "name": "People Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/people?q=john&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "people"],
+              "query": [
+                {"key": "q", "value": "john", "description": "Name search query (1–200 chars)"},
+                {"key": "specialty", "value": "", "description": "Filter by specialty (e.g. cardiology)", "disabled": true},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Search for users by name or specialty."
+          }
+        },
+        {
+          "name": "Course Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/courses?q=anatomy&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "courses"],
+              "query": [
+                {"key": "q", "value": "anatomy", "description": "Keyword query (1–200 chars)"},
+                {"key": "specialty_tags", "value": "", "description": "Repeatable specialty tag filter", "disabled": true},
+                {"key": "pricing_type", "value": "", "description": "FREE or PAID", "disabled": true},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Search COURSE_CARD posts with specialty and pricing filters."
+          }
+        },
+        {
+          "name": "Webinar Search",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/search/webinars?q=surgery&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "search", "webinars"],
+              "query": [
+                {"key": "q", "value": "surgery", "description": "Keyword query (1–200 chars)"},
+                {"key": "specialty_tags", "value": "", "description": "Repeatable specialty tag filter", "disabled": true},
+                {"key": "pricing_type", "value": "", "description": "FREE or PAID", "disabled": true},
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Search WEBINAR_CARD posts with specialty and pricing filters."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions / Likes",
+      "description": "Like and unlike posts and comments.",
+      "item": [
+        {
+          "name": "Like Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/like",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "like"]
+            },
+            "description": "Like a post. Auth required. Returns 201 Created."
+          }
+        },
+        {
+          "name": "Unlike Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/like",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "like"]
+            },
+            "description": "Remove like from a post. Auth required. Returns 204 No Content."
+          }
+        },
+        {
+          "name": "Like Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/comments/{{comment_id}}/like",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "comments", "{{comment_id}}", "like"]
+            },
+            "description": "Like a comment. Auth required. Returns 201 Created."
+          }
+        },
+        {
+          "name": "Unlike Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/comments/{{comment_id}}/like",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "comments", "{{comment_id}}", "like"]
+            },
+            "description": "Remove like from a comment. Auth required. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions / Comments",
+      "description": "Threaded comments on posts (max depth 2).",
+      "item": [
+        {
+          "name": "List Post Comments",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/comments?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "comments"],
+              "query": [
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "List comments for a post. No auth required (optional)."
+          }
+        },
+        {
+          "name": "Create Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Great post! Very insightful.\",\n  \"parent_comment_id\": null\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/comments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "comments"]
+            },
+            "description": "Create a comment or reply. Auth required. Rate limit: 5/minute per user.\n\nFor a reply, set `parent_comment_id` to an existing comment's UUID. Max depth is 2 (replies to replies not allowed).\n\n`body` must be 1–2000 chars."
+          }
+        },
+        {
+          "name": "Update Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Updated comment text.\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/comments/{{comment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "comments", "{{comment_id}}"]
+            },
+            "description": "Edit a comment. Author only. `body` is required (1–2000 chars)."
+          }
+        },
+        {
+          "name": "Delete Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/comments/{{comment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "comments", "{{comment_id}}"]
+            },
+            "description": "Delete a comment. Author only. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions / Bookmarks",
+      "description": "Save and retrieve bookmarked posts.",
+      "item": [
+        {
+          "name": "Bookmark Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/bookmark",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "bookmark"]
+            },
+            "description": "Bookmark a post. Auth required. Returns 201 Created."
+          }
+        },
+        {
+          "name": "Remove Bookmark",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/bookmark",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "bookmark"]
+            },
+            "description": "Remove a bookmark. Auth required. Returns 204 No Content."
+          }
+        },
+        {
+          "name": "List My Bookmarks",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/bookmarks?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "bookmarks"],
+              "query": [
+                {"key": "limit", "value": "20"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "List all posts bookmarked by the authenticated user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions / Reposts & Shares",
+      "description": "Internal reposts and external share tracking.",
+      "item": [
+        {
+          "name": "Repost",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Sharing this great post with my thoughts.\",\n  \"visibility\": \"PUBLIC\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/repost",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "repost"]
+            },
+            "description": "Repost (internal share) a post. Creates a new REPOST-type post with `original_post_id` set and increments `share_count` on the original. Auth required.\n\n`body` is optional commentary (max 5000 chars).\n\n**visibility:** PUBLIC, CONNECTIONS_ONLY, PRIVATE"
+          }
+        },
+        {
+          "name": "Track External Share",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"COPY_LINK\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/share",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "share"]
+            },
+            "description": "Track an external share event. Auth required.\n\n**platform values:** APP, WHATSAPP, TWITTER, COPY_LINK"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions / Reports",
+      "description": "Report posts or comments for moderation. 5+ OPEN reports auto-hides content.",
+      "item": [
+        {
+          "name": "Report Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"This post contains misinformation about medical treatments.\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/posts/{{post_id}}/report",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "posts", "{{post_id}}", "report"]
+            },
+            "description": "Report a post for moderation. Auth required. `reason` must be 5–255 chars.\n\n**Auto-hide:** 5+ OPEN reports triggers HIDDEN_BY_ADMIN status automatically."
+          }
+        },
+        {
+          "name": "Report Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"This comment is abusive and violates community guidelines.\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interactions/comments/{{comment_id}}/report",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interactions", "comments", "{{comment_id}}", "report"]
+            },
+            "description": "Report a comment for moderation. Auth required. `reason` must be 5–255 chars."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Experiments / Cohorts",
+      "description": "Manage user cohorts for personalised feed algorithms. Admin only.",
+      "item": [
+        {
+          "name": "Create Cohort",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cardiology Specialists\",\n  \"description\": \"Doctors with cardiology specialty\",\n  \"rules\": {\n    \"specialty\": \"cardiology\",\n    \"verified\": true\n  },\n  \"feed_algorithm\": {\n    \"recency\": 0.4,\n    \"specialty\": 0.3,\n    \"affinity\": 0.2,\n    \"cold_start_threshold\": 10,\n    \"affinity_ceiling\": 0.8\n  },\n  \"priority\": 10,\n  \"is_active\": true\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/cohorts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "cohorts"]
+            },
+            "description": "Create a new cohort with custom feed algorithm weights. Admin only (enforced at gateway).\n\n`feed_algorithm` keys: recency, specialty, affinity, cold_start_threshold, affinity_ceiling\n\n`priority` range: 0–32767"
+          }
+        },
+        {
+          "name": "List Cohorts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/cohorts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "cohorts"]
+            },
+            "description": "List all cohorts. Admin only."
+          }
+        },
+        {
+          "name": "Get Cohort",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/cohorts/{{cohort_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "cohorts", "{{cohort_id}}"]
+            },
+            "description": "Get a cohort by ID. Admin only."
+          }
+        },
+        {
+          "name": "Update Cohort",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"feed_algorithm\": {\n    \"recency\": 0.5,\n    \"specialty\": 0.25,\n    \"affinity\": 0.15,\n    \"cold_start_threshold\": 5,\n    \"affinity_ceiling\": 0.9\n  },\n  \"is_active\": true\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/cohorts/{{cohort_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "cohorts", "{{cohort_id}}"]
+            },
+            "description": "Update cohort details. Admin only. All fields optional."
+          }
+        },
+        {
+          "name": "Delete Cohort",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/cohorts/{{cohort_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "cohorts", "{{cohort_id}}"]
+            },
+            "description": "Delete a cohort. Admin only. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Experiments / A/B Tests",
+      "description": "Create and manage A/B experiments with deterministic variant assignment.",
+      "item": [
+        {
+          "name": "Create Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cohort_id\": null,\n  \"name\": \"Feed Recency Experiment\",\n  \"description\": \"Testing higher recency weight for engagement\",\n  \"variants\": [\n    {\n      \"name\": \"control\",\n      \"traffic_pct\": 50,\n      \"algorithm_config\": {\n        \"recency\": 0.4,\n        \"specialty\": 0.3,\n        \"affinity\": 0.3\n      }\n    },\n    {\n      \"name\": \"treatment\",\n      \"traffic_pct\": 50,\n      \"algorithm_config\": {\n        \"recency\": 0.6,\n        \"specialty\": 0.2,\n        \"affinity\": 0.2\n      }\n    }\n  ],\n  \"end_date\": \"2026-03-31T23:59:59Z\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments"]
+            },
+            "description": "Create an A/B experiment. Admin only. Traffic percentages across all variants must sum to 100.\n\nVariant assignment is deterministic: SHA-256(user_id:experiment_id) % 100 — no DB storage per user needed."
+          }
+        },
+        {
+          "name": "List Experiments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments"]
+            },
+            "description": "List all experiments. Admin only."
+          }
+        },
+        {
+          "name": "Get Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}"]
+            },
+            "description": "Get an experiment by ID. Admin only."
+          }
+        },
+        {
+          "name": "Update Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated experiment description\",\n  \"end_date\": \"2026-04-30T23:59:59Z\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}"]
+            },
+            "description": "Update experiment details. Admin only. All fields optional."
+          }
+        },
+        {
+          "name": "Start Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}", "start"]
+            },
+            "description": "Transition experiment to RUNNING state. Admin only."
+          }
+        },
+        {
+          "name": "Pause Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}/pause",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}", "pause"]
+            },
+            "description": "Pause a running experiment. Admin only."
+          }
+        },
+        {
+          "name": "Complete Experiment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}", "complete"]
+            },
+            "description": "Mark an experiment as completed. Admin only."
+          }
+        },
+        {
+          "name": "Get Experiment Results",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/{{experiment_id}}/results",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "{{experiment_id}}", "results"]
+            },
+            "description": "Retrieve aggregated results for a completed experiment. Admin only."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Experiments / Weights & Events",
+      "description": "Feed weight resolution and experiment event ingestion.",
+      "item": [
+        {
+          "name": "Resolve Feed Weights",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/weights",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "weights"],
+              "query": [
+                {"key": "cohort_ids", "value": "", "description": "Repeatable. Cohort UUIDs to resolve weights for.", "disabled": true}
+              ]
+            },
+            "description": "Resolve the effective WeightConfig for the authenticated user based on their cohort memberships and active experiments. Auth required.\n\nCache key: `experiments:weights:{user_id}:{hash}` (TTL 60s)"
+          }
+        },
+        {
+          "name": "Ingest Experiment Event",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{auth_token}}", "type": "string"}]
+            },
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"experiment_id\": \"{{experiment_id}}\",\n  \"variant_name\": \"treatment\",\n  \"event_type\": \"IMPRESSION\",\n  \"post_id\": \"{{post_id}}\",\n  \"session_duration_s\": null\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/experiments/events",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "experiments", "events"]
+            },
+            "description": "Record a user interaction event for an experiment variant. Auth required. Returns 202 Accepted.\n\n**event_type values:** IMPRESSION, CLICK, LIKE, SESSION_START, SESSION_END\n\nFor SESSION_END, provide `session_duration_s` (>= 0).\n\n`variant_name` must match one of the experiment's `variants[].name` strings."
+          }
+        }
+      ]
+    }
+  ]
+}

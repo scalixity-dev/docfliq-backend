@@ -4,7 +4,7 @@ Monorepo backend for Docfliq: microservices (Identity, Content, Course, Webinar,
 
 ## Architecture
 
-- **Services**: FastAPI apps with domain-driven layout (router → controller → service). Each service has its own DB schema and optional Redis.
+- **Services**: FastAPI apps with domain-driven layout (router → service). Each service has its own database and optional Redis.
 - **Shared**: JWT auth, event schemas, Pydantic models, Postgres/Redis factories, middleware, utils, constants. No service-to-service imports.
 - **Media**: Lambda handlers only (transcoding, image processing); no FastAPI.
 
@@ -18,12 +18,12 @@ flowchart LR
     ALB[ALB]
   end
   subgraph services [Microservices]
-    Identity[identity]
-    Content[content]
-    Course[course]
-    Webinar[webinar]
-    Payment[payment]
-    Platform[platform]
+    Identity[identity :8001]
+    Content[content :8002]
+    Course[course :8003]
+    Webinar[webinar :8004]
+    Payment[payment :8005]
+    Platform[platform :8006]
   end
   subgraph data [Data]
     RDS[(Postgres)]
@@ -44,76 +44,770 @@ flowchart LR
   Platform --> RDS
 ```
 
+---
+
 ## Local Development
 
 ### Prerequisites
 
-- Python 3.11+
-- Docker and Docker Compose
-- Make (optional)
+| Tool | Version | Notes |
+|------|---------|-------|
+| Python | 3.12+ | `python3 --version` |
+| Docker | 20+ | `docker --version` |
+| make | any | `make --version` |
+| jq | any | `sudo apt install jq` |
 
-### Quick Start
+### One-time machine setup
 
-1. Copy env and install shared + service deps:
+```bash
+# 1. Install python venv support (Ubuntu/Debian)
+sudo apt install python3.12-venv jq -y
 
-   ```bash
-   cp .env.example .env
-   make install
-   ```
+# 2. Create virtualenv and install all dev tools + service deps
+make install-dev
+make install
 
-2. Start dependencies (Postgres, Redis):
+# 3. Install service-specific packages (uvicorn, PyJWT, etc.)
+#    make install silently skips these — run explicitly:
+.venv/bin/pip install -r services/content/requirements.txt
 
-   ```bash
-   make docker-up
-   ```
+# 4. Start local Postgres + Redis (no docker-compose plugin needed)
+make docker-up
+```
 
-3. Run a service (e.g. identity):
+> **Switching to AWS RDS later?**
+> Get `.env.dev` from your team lead, place it in the repo root, then run `make setup-env`.
+> It fetches the RDS password from Secrets Manager and writes `.env` automatically.
 
-   ```bash
-   make run-identity
-   ```
+### Environment file
 
-   Or run all services via Docker Compose:
+The repo ships with `.env.example`. For local dev a working `.env` is already provided:
 
-   ```bash
-   docker-compose up --build
-   ```
+```
+POSTGRES_HOST=localhost  POSTGRES_USER=docfliq  POSTGRES_PASSWORD=changeme
+```
 
-### Env Setup
+All `DATABASE_URL`s point to local Docker Postgres by default. No AWS credentials needed for local dev.
 
-Edit `.env` with your values. See `.env.example` for required variables (DB URLs, Redis, JWT secret, AWS, Razorpay, etc.).
+### Make targets
 
-### Make Targets
+| Target | Description |
+|--------|-------------|
+| `make venv` | Create `.venv` virtualenv |
+| `make install-dev` | Install dev tools (awscli, boto3, alembic, ruff, pytest) |
+| `make install` | Install all service deps + shared package |
+| `make docker-up` | Start local Postgres + Redis containers |
+| `make docker-down` | Stop containers (data kept) |
+| `make docker-clean` | Destroy containers + data volumes (full reset) |
+| `make setup-env` | Fetch RDS password from Secrets Manager → write `.env` (AWS only) |
+| `make run-<service>` | Run a service locally with hot reload |
+| `make migrate` | Run Alembic `upgrade head` for all services |
+| `make test` | Run all service tests |
+| `make lint` | Lint + format with Ruff |
 
-| Target           | Description                          |
-|------------------|--------------------------------------|
-| `make install`   | Install shared package and deps      |
-| `make test`      | Run tests for all services           |
-| `make lint`      | Lint with Ruff                       |
-| `make run-identity` | Run identity service (and siblings) |
-| `make docker-up` | Start Postgres, Redis (and optional LocalStack) |
-| `make migrate`   | Run Alembic migrations (per service)|
-| `make seed`      | Seed dev data                        |
+---
+
+## EC2 Deployment (Docker)
+
+Deploy the **Identity** and **Content** services on a single EC2 instance using Docker Compose. Postgres runs on **AWS RDS** (not containerized). Redis, OpenSearch, and Nginx (with SSL via Let's Encrypt) run as Docker containers on the EC2 instance.
+
+### Architecture
+
+```
+                         ┌── AWS RDS ──────────┐
+                         │  postgres :5432      │
+                         │  identity_db         │
+                         │  content_db          │
+                         └──────────────────────┘
+                                   ▲
+┌──────────────────────────────────┼──────────────────────────┐
+│  EC2 Instance                    │                          │
+│                                  │                          │
+│  ┌──────────┐  /api/v1/auth..  ┌──────────┐                │
+│  │          │─────────────────▶│ identity │────────────────┘
+│  │  nginx   │                  │  :8000   │
+│  │  :80/443 │  /api/v1/cms..  ┌──────────┐
+│  │  (SSL)   │─────────────────▶│ content  │
+│  └──────────┘                  │  :8000   │
+│                                └──────────┘
+│  ┌──────────┐  ┌──────────────┐
+│  │  redis   │  │  opensearch   │
+│  │  :6379   │  │    :9200      │
+│  └──────────┘  └──────────────┘
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Prerequisites
+
+| Requirement | Minimum |
+|-------------|---------|
+| EC2 instance | t3.medium (2 vCPU, 4 GB RAM) or larger |
+| Storage | 30 GB gp3 |
+| OS | Ubuntu 22.04 / Amazon Linux 2023 |
+| Docker | 24+ |
+| Docker Compose | v2 (bundled with Docker) |
+| Ports open | 80, 443 (inbound); 22 (SSH) |
+| AWS RDS | Postgres 16, accessible from EC2 security group |
+| DNS | A record pointing your domain to the EC2 public IP (required for SSL) |
+
+### Step 1 — Install Docker on EC2
+
+```bash
+# Ubuntu 22.04
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+# Log out and back in for group change to take effect
+```
+
+### Step 2 — Clone and configure
+
+```bash
+git clone https://github.com/your-org/docfliq-backend.git
+cd docfliq-backend
+
+# Create env file from template
+cp .env.ec2.example .env.ec2
+
+# Edit with your production values
+nano .env.ec2
+```
+
+**Required variables** (must be changed from defaults):
+
+| Variable | Description |
+|----------|-------------|
+| `IDENTITY_DATABASE_URL` | RDS connection string for identity_db |
+| `CONTENT_DATABASE_URL` | RDS connection string for content_db |
+| `JWT_SECRET` | Random 64-char string (shared by identity + content) |
+| `CORS_ORIGINS` | Your frontend domain(s), comma-separated |
+| `APP_BASE_URL` | Your frontend URL |
+| `DOMAIN` | API domain for SSL cert (e.g. `api.docfliq.com`) |
+
+### Step 3 — Create databases on RDS
+
+```bash
+# Connect to RDS and create the databases (one-time)
+psql -h your-rds-host.region.rds.amazonaws.com -U docfliq -c "CREATE DATABASE identity_db;"
+psql -h your-rds-host.region.rds.amazonaws.com -U docfliq -c "CREATE DATABASE content_db;"
+```
+
+### Step 4 — Choose which services to run (profiles)
+
+Every service has a **profile**. Use `--profile` to pick what runs on this machine.
+
+| Profile | Starts |
+|---------|--------|
+| `identity` | Identity service |
+| `content` | Content service |
+| `redis` | Redis |
+| `opensearch` | OpenSearch |
+| `nginx` | Nginx + Certbot |
+| `all` | Everything above |
+
+**All-in-one (single machine):**
+
+```bash
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile all up -d --build
+```
+
+**Pick specific services:**
+
+```bash
+# Only identity + redis + nginx on this machine
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile identity --profile redis --profile nginx up -d --build
+
+# Only content + opensearch + redis + nginx on another machine
+docker compose -f docker-compose.ec2.yml --env-file .env.ec2 \
+  --profile content --profile redis --profile opensearch --profile nginx up -d --build
+```
+
+This starts only the containers you selected. Example for `--profile all`:
+
+| Container | Image | Port (host) |
+|-----------|-------|-------------|
+| `redis` | redis:7-alpine | 127.0.0.1:6379 |
+| `opensearch` | opensearchproject/opensearch:2.11.0 | 127.0.0.1:9200 |
+| `identity` | built from `services/identity/Dockerfile` | 127.0.0.1:8001 |
+| `content` | built from `services/content/Dockerfile` | 127.0.0.1:8002 |
+| `nginx` | nginx:1.25-alpine | 0.0.0.0:80, 443 |
+| `certbot` | certbot/certbot | — (renewal daemon) |
+
+### Step 5 — Run database migrations
+
+```bash
+# Run Alembic migrations inside each service container
+docker compose -f docker-compose.ec2.yml --profile all exec identity \
+  alembic -c /app/migrations/identity/alembic.ini upgrade head
+
+docker compose -f docker-compose.ec2.yml --profile all exec content \
+  alembic -c /app/migrations/content/alembic.ini upgrade head
+```
+
+### Step 6 — Verify (HTTP)
+
+```bash
+# Check all containers are running
+docker compose -f docker-compose.ec2.yml --profile all ps
+
+# Health checks
+curl http://localhost/identity/health
+# → {"status":"ok","service":"identity"}
+
+curl http://localhost/content/health
+# → {"status":"ok","service":"content"}
+
+# API endpoint test
+curl http://localhost/api/v1/feed
+```
+
+### Step 7 — Enable SSL with Let's Encrypt
+
+Make sure your DNS A record is pointing to the EC2 public IP before running this.
+
+```bash
+# 1. Get the SSL certificate
+docker compose -f docker-compose.ec2.yml --profile nginx run --rm certbot \
+  certonly --webroot -w /var/www/certbot \
+  -d api.yourdomain.com --agree-tos -m your@email.com
+
+# 2. Edit nginx.ec2.conf:
+#    - Uncomment the HTTPS server block (port 443)
+#    - Replace YOUR_DOMAIN with your actual domain (e.g. api.yourdomain.com)
+#    - In the HTTP server block, uncomment the "return 301" redirect
+#    - In the HTTP server block, remove/comment out the temporary location blocks
+nano nginx.ec2.conf
+
+# 3. Reload nginx to pick up the changes
+docker compose -f docker-compose.ec2.yml --profile all exec nginx nginx -s reload
+
+# 4. Verify HTTPS works
+curl https://api.yourdomain.com/identity/health
+```
+
+Certbot auto-renews every 12 hours inside its container. Nginx reads certs from a shared volume, so renewals are picked up automatically.
+
+### Multi-Machine Deployment
+
+When splitting services across multiple EC2 instances, override these in `.env.ec2` on each machine:
+
+```bash
+# Machine A (.env.ec2) — runs identity only
+IDENTITY_SERVICE_URL=http://identity:8000/api/v1          # local (default)
+CONTENT_SERVICE_URL=http://10.0.1.20:8002/api/v1          # Machine B private IP
+REDIS_URL=redis://redis:6379/0                            # local redis
+IDENTITY_HOST_PORT=0.0.0.0:8001                           # expose to other machines
+
+# Machine B (.env.ec2) — runs content + opensearch only
+CONTENT_SERVICE_URL=http://content:8000/api/v1             # local (default)
+IDENTITY_SERVICE_URL=http://10.0.1.10:8001/api/v1          # Machine A private IP
+REDIS_URL=redis://redis:6379/0                             # local redis
+OPENSEARCH_URL=http://opensearch:9200                      # local opensearch
+CONTENT_HOST_PORT=0.0.0.0:8002                             # expose to other machines
+```
+
+> Use private IPs within the same VPC. Open the required ports (8001, 8002) in the EC2 security group between machines.
+
+### Nginx Route Map
+
+| Path prefix | Service |
+|-------------|---------|
+| `/api/v1/auth/*` | identity |
+| `/api/v1/profile/*` | identity |
+| `/api/v1/social/*` | identity |
+| `/api/v1/verification/*` | identity |
+| `/api/v1/admin/users/*` | identity |
+| `/api/v1/cms/*` | content |
+| `/api/v1/feed/*` | content |
+| `/api/v1/search/*` | content |
+| `/api/v1/interactions/*` | content |
+| `/api/v1/notifications/*` | content |
+| `/identity/health`, `/identity/docs` | identity |
+| `/content/health`, `/content/docs` | content |
+
+### Operations
+
+```bash
+# View logs (use the same --profile flags you started with)
+docker compose -f docker-compose.ec2.yml --profile all logs -f identity content
+
+# Restart a single service
+docker compose -f docker-compose.ec2.yml --profile all restart identity
+
+# Rebuild and redeploy (after code changes / git pull)
+git pull
+docker compose -f docker-compose.ec2.yml --profile all up -d --build identity content
+
+# Stop everything (Redis/OpenSearch data persists in volumes)
+docker compose -f docker-compose.ec2.yml --profile all down
+
+# Full reset (destroys Redis + OpenSearch data — RDS data is safe)
+docker compose -f docker-compose.ec2.yml --profile all down -v
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.ec2.yml` | Compose file with profiles (identity, content, redis, opensearch, nginx, all) |
+| `nginx.ec2.conf` | Nginx reverse proxy config with path-based routing + SSL |
+| `.env.ec2.example` | Environment variable template — copy to `.env.ec2` |
+| `services/identity/Dockerfile` | Identity service Docker image |
+| `services/content/Dockerfile` | Content service Docker image |
+
+### RDS Security Group
+
+Ensure the EC2 instance's security group is allowed to connect to RDS on port 5432. In the RDS security group, add an inbound rule:
+
+| Type | Port | Source |
+|------|------|--------|
+| PostgreSQL | 5432 | EC2 security group ID (e.g. `sg-0abc123`) |
+
+---
+
+## Microservices
+
+### MS-1 · Identity — `services/identity` · port 8001
+
+Auth, user profiles, verification, and social graph.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `auth/` | `/api/v1/auth` | Login (email/OTP/OAuth), JWT issue & refresh |
+| `profile/` | `/api/v1/profile` | User profile CRUD, avatar upload |
+| `verification/` | `/api/v1/verification` | Medical licence verification flow |
+| `social_graph/` | `/api/v1/social` | Follow, block, report |
+
+**Database**: `identity_db`
+
+**Run**
+```bash
+make run-identity
+# → http://localhost:8001/docs
+```
+
+---
+
+### MS-2 · Content — `services/content` · port 8002
+
+CMS, feed, full-text search, and all social interactions on content.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `cms/` | `/api/v1/cms` | Post + Channel create / edit / delete |
+| `feed/` | `/api/v1/feed` | Paginated feed, personalized by follows & specialty |
+| `search/` | `/api/v1/search` | Full-text search on posts (Postgres GIN / tsvector) |
+| `interactions/` | `/api/v1/interactions` | Like, comment, bookmark, share, follow, block, report |
+
+**Database**: `content_db`
+
+**Schema** (10 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `channels` | Institutional / sponsor channels |
+| `posts` | Main content posts (text, video, image, link, webinar card, course card, repost) |
+| `post_versions` | Full edit history snapshots |
+| `comments` | Threaded comments (depth-2) on posts |
+| `likes` | Polymorphic likes on posts and comments |
+| `bookmarks` | User post bookmarks |
+| `shares` | Share tracking (platform: app / whatsapp / twitter / copy-link) |
+| `blocks` | User block list |
+| `reports` | Content and user reports |
+
+---
+
+#### Running the content service locally
+
+**Step 1 — Install dependencies** (once)
+
+```bash
+# From repo root — installs uvicorn, PyJWT, asyncpg, etc.
+.venv/bin/pip install -r services/content/requirements.txt
+```
+
+**Step 2 — Create the database and apply migrations** (once, or after model changes)
+
+```bash
+# Create content_db (skip if it already exists)
+docker exec docfliq-postgres psql -U docfliq -c "CREATE DATABASE content_db;" 2>/dev/null || true
+
+# Apply all migrations
+cd migrations/content && ../../.venv/bin/alembic upgrade head && cd ../..
+
+# Verify tables
+docker exec docfliq-postgres psql -U docfliq -d content_db -c "\dt"
+```
+
+**Step 3 — Run the service**
+
+```bash
+make run-content
+# Starts uvicorn on http://0.0.0.0:8002 with hot-reload
+```
+
+**Step 4 — Open API docs**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8002/docs` | Swagger UI — interactive, try endpoints live |
+| `http://localhost:8002/redoc` | ReDoc — read-optimised reference |
+| `http://localhost:8002/health` | Liveness probe → `{"status":"ok","service":"content"}` |
+
+---
+
+#### Testing the API
+
+**Generate a dev JWT token**
+
+All write endpoints require a `Bearer` token. Generate one against the default dev secret:
+
+```bash
+python3 -c "
+import jwt, datetime
+print(jwt.encode(
+  {'sub': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)},
+  'dev-secret', algorithm='HS256'
+))"
+```
+
+Copy the output. In Swagger UI click **Authorize** (top-right lock icon) and enter `Bearer <token>`.
+
+**Quick test sequence via Swagger**
+
+1. `GET /health` — confirm service is alive
+2. `POST /api/v1/cms/channels` — create a channel
+3. `POST /api/v1/cms/posts` — create a DRAFT post (`channel_id` from step 2)
+4. `POST /api/v1/cms/posts/{id}/publish` — publish it
+5. `GET /api/v1/feed` — confirm post appears in the public feed (no auth needed)
+6. `GET /api/v1/search/posts?q=your+title` — verify full-text search
+7. `POST /api/v1/interactions/posts/{id}/like` — like the post
+8. `PATCH /api/v1/cms/posts/{id}` — edit post → status becomes `EDITED`, version snapshot saved
+9. `GET /api/v1/cms/posts/{id}/versions` — view edit history
+
+**curl example**
+
+```bash
+TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode(
+  {'sub':'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp':datetime.datetime.utcnow()+datetime.timedelta(hours=24)},
+  'dev-secret',algorithm='HS256'))")
+
+# Create a channel
+curl -s -X POST http://localhost:8002/api/v1/cms/channels \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Channel","description":"My first channel"}' | python3 -m json.tool
+
+# Public feed (no auth needed)
+curl -s http://localhost:8002/api/v1/feed | python3 -m json.tool
+```
+
+---
+
+**Adding a new migration after changing models**
+
+```bash
+cd migrations/content
+../../.venv/bin/alembic revision --autogenerate -m "describe_your_change"
+../../.venv/bin/alembic upgrade head
+cd ../..
+```
+
+---
+
+### MS-3 · Course — `services/course` · port 8003
+
+Complete LMS: course catalogue, enrollment, learning player with signed video URLs,
+MCQ/MSQ assessments with timed quizzes, weighted progress tracking (video watch %,
+document pages %, quiz pass), SCORM 1.2/2004 support, and PDF certificate generation
+with QR verification.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `lms/` | `/api/v1/lms` | Course / module / lesson CRUD, enrollment (free + paid), progress tracking |
+| `assessment/` | `/api/v1/assessment` | Quiz management (MCQ / MSQ), timed attempts, grading, answer review |
+| `player/` | `/api/v1/player` | Video / document playback, CloudFront signed URLs, heartbeat, SCORM, weighted progress |
+| `certificates/` | `/api/v1/certificates` | PDF certificate generation (ReportLab), S3 upload, public QR verification |
+
+**Database**: `course_db`
+
+**Schema** (12 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `courses` | Course catalogue with syllabus, pricing, completion_logic JSONB |
+| `course_modules` | Ordered sections within a course |
+| `lessons` | Individual lessons (VIDEO, PDF, TEXT, QUIZ, SCORM) with player metadata |
+| `enrollments` | User enrollment with weighted progress_pct and status |
+| `lesson_progress` | Per-lesson tracking: watched_intervals, pages_viewed, quiz_score |
+| `quizzes` | MCQ/MSQ questions JSONB, time limits, randomize, show_answers policy |
+| `quiz_attempts` | Per-attempt record with answers, score, pass/fail |
+| `scorm_sessions` | SCORM 1.2/2004 runtime data (tracking_data JSONB) |
+| `certificates` | PDF certificates with tamper-proof QR verification codes |
+
+---
+
+#### Running the course service locally
+
+**Step 1 — Install dependencies** (once)
+
+```bash
+# From repo root
+.venv/bin/pip install -r services/course/requirements.txt
+```
+
+**Step 2 — Create the database and apply migrations** (once, or after model changes)
+
+```bash
+# Create course_db (skip if it already exists)
+docker exec docfliq-postgres psql -U docfliq -c "CREATE DATABASE course_db;" 2>/dev/null || true
+
+# Apply all migrations
+cd migrations/course && ../../.venv/bin/alembic upgrade head && cd ../..
+
+# Verify tables
+docker exec docfliq-postgres psql -U docfliq -d course_db -c "\dt"
+```
+
+**Step 3 — Run the service**
+
+```bash
+make run-course
+# Starts uvicorn on http://0.0.0.0:8003 with hot-reload
+```
+
+**Step 4 — Open API docs**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8003/docs` | Swagger UI — interactive, try endpoints live |
+| `http://localhost:8003/redoc` | ReDoc — read-optimised reference |
+| `http://localhost:8003/health` | Liveness probe → `{"status":"ok","service":"course"}` |
+
+---
+
+#### Testing the API
+
+**Generate a dev JWT token**
+
+```bash
+TOKEN=$(python3 -c "import jwt,datetime; print(jwt.encode(
+  {'sub':'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+   'exp':datetime.datetime.utcnow()+datetime.timedelta(hours=24)},
+  'change-me',algorithm='HS256'))")
+```
+
+> Note: the course service default JWT secret is `change-me` (see `app/config.py`).
+
+Copy the token. In Swagger UI click **Authorize** (top-right lock icon) and enter `Bearer <token>`.
+
+**Quick test sequence via Swagger**
+
+1. `GET /health` — confirm service is alive
+2. `POST /api/v1/lms/courses` — create a DRAFT course (instructor)
+3. `POST /api/v1/lms/courses/{id}/modules` — add a module
+4. `POST /api/v1/lms/modules/{id}/lessons` — add a VIDEO lesson
+5. `PATCH /api/v1/lms/courses/{id}/status` — publish the course (`{"status": "PUBLISHED"}`)
+6. `POST /api/v1/lms/courses/{id}/enroll` — enroll as a student
+7. `POST /api/v1/assessment/lessons/{lesson_id}/quiz` — create a quiz for a lesson
+8. `POST /api/v1/assessment/quizzes/{id}/start` — start the quiz (timer begins)
+9. `POST /api/v1/assessment/quizzes/{id}/attempt` — submit answers
+10. `GET /api/v1/player/courses/{id}/progress/detail` — view weighted progress breakdown
+11. `POST /api/v1/certificates/enrollments/{id}/generate` — generate PDF certificate (after completion)
+12. `GET /api/v1/certificates/verify/{code}` — public QR verification (no auth)
+
+**curl examples**
+
+```bash
+# Create a course
+curl -s -X POST http://localhost:8003/api/v1/lms/courses \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Cardiology Basics",
+    "description": "Introduction to cardiology for medical professionals.",
+    "category": "Cardiology",
+    "pricing_type": "FREE",
+    "instructor_name": "Dr. Smith"
+  }' | python3 -m json.tool
+
+# Enroll in a course
+curl -s -X POST http://localhost:8003/api/v1/lms/courses/{course_id}/enroll \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+# Submit a quiz attempt (MCQ answer=index, MSQ answer=[indices])
+curl -s -X POST http://localhost:8003/api/v1/assessment/quizzes/{quiz_id}/attempt \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"answers": [1, [0,2], 0], "time_taken_secs": 120}' | python3 -m json.tool
+
+# Video heartbeat (anti-cheat intervals)
+curl -s -X POST http://localhost:8003/api/v1/player/lessons/{lesson_id}/heartbeat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"position_secs": 180, "watched_intervals": [[0,120],[150,180]]}' | python3 -m json.tool
+
+# Generate certificate (after course completion)
+curl -s -X POST http://localhost:8003/api/v1/certificates/enrollments/{enrollment_id}/generate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"recipient_name": "Dr. Jane Smith"}' | python3 -m json.tool
+
+# Verify certificate (public, no auth)
+curl -s http://localhost:8003/api/v1/certificates/verify/{verification_code} | python3 -m json.tool
+```
+
+---
+
+**Adding a new migration after changing models**
+
+```bash
+cd migrations/course
+../../.venv/bin/alembic revision --autogenerate -m "describe_your_change"
+../../.venv/bin/alembic upgrade head
+cd ../..
+```
+
+---
+
+#### Environment variables (optional overrides)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COURSE_DATABASE_URL` | `postgresql+asyncpg://...localhost.../course_db` | Postgres connection |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis for heartbeat, resume, quiz timers |
+| `JWT_SECRET` | `change-me` | JWT signing secret |
+| `CLOUDFRONT_DOMAIN` | *(empty)* | CloudFront domain for signed video URLs |
+| `CLOUDFRONT_KEY_PAIR_ID` | *(empty)* | CloudFront key pair ID |
+| `CLOUDFRONT_PRIVATE_KEY_PATH` | *(empty)* | Path to CloudFront RSA private key |
+| `S3_BUCKET` | `docfliq-media` | S3 bucket for certificate PDFs |
+| `S3_REGION` | `us-east-1` | AWS region |
+| `CERTIFICATE_SIGNING_SECRET` | `change-me-certificate-secret` | HMAC secret for tamper-proof codes |
+| `CERTIFICATE_BASE_URL` | `https://docfliq.com/certificates` | Public verification URL prefix |
+
+---
+
+### MS-4 · Webinar — `services/webinar` · port 8004
+
+Live streaming (AWS IVS / Chime), Q&A, polls.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `live_streaming/` | `/api/v1/webinar` | Webinar schedule, stream lifecycle |
+| `engagement/` | `/api/v1/engagement` | Q&A, polls, reactions |
+
+**Run**
+```bash
+make run-webinar
+# → http://localhost:8004/docs
+```
+
+---
+
+### MS-5 · Media — `services/media`
+
+Lambda-only service — no FastAPI, no port.
+Handles S3-triggered transcoding (video) and image processing (thumbnails, avatars).
+Deploy via SAM / Terraform Lambda module.
+
+---
+
+### MS-6 · Payment — `services/payment` · port 8005
+
+Razorpay integration, order management, entitlements.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `razorpay/` | `/api/v1/payment` | Order create, webhook verification |
+| `entitlements/` | `/api/v1/entitlements` | Course / webinar access control |
+
+**Database**: `payment_db`
+
+**Run**
+```bash
+make run-payment
+# → http://localhost:8005/docs
+```
+
+---
+
+### MS-7 · Platform — `services/platform` · port 8006
+
+Admin panel, notifications, analytics, audit log.
+
+**Domains**
+
+| Domain | Prefix | Responsibility |
+|--------|--------|----------------|
+| `admin/` | `/api/v1/admin` | User management, content moderation |
+| `notifications/` | `/api/v1/notifications` | Push, email, SMS dispatch |
+| `analytics/` | `/api/v1/analytics` | Dashboards, event aggregation |
+| `audit/` | `/api/v1/audit` | Immutable audit trail |
+
+**Database**: `platform_db`
+
+**Run**
+```bash
+make run-platform
+# → http://localhost:8006/docs
+```
+
+---
 
 ## Repository Layout
 
-- `services/identity` — MS-1: Auth, Profile, Verification, Social Graph
-- `services/content` — MS-2: CMS, Feed, Search, Interactions
-- `services/course` — MS-3: LMS, Assessment, Certificates
-- `services/webinar` — MS-4: Live Streaming, Chime/IVS, Engagement
-- `services/media` — MS-5: Lambda handlers (transcoding, image processing)
-- `services/payment` — MS-6: Razorpay, Entitlements
-- `services/platform` — MS-7: Admin, Notifications, Analytics, Audit
-- `shared/` — JWT auth, events, models, database, middleware, utils, constants
-- `infra/` — Terraform (VPC, RDS, Redis, ECS, Lambda, etc.)
-- `migrations/` — Alembic per service (identity, content, course, payment, platform)
-- `scripts/` — deploy, seed-data, health-check
-- `.github/workflows/` — CI, deploy-dev, deploy-uat, deploy-prod
+```
+docfliq-backend/
+├── services/
+│   ├── identity/       # MS-1 Auth + Profile
+│   ├── content/        # MS-2 CMS + Feed + Search + Interactions
+│   ├── course/         # MS-3 LMS + Assessments
+│   ├── webinar/        # MS-4 Live Streaming
+│   ├── media/          # MS-5 Lambda handlers
+│   ├── payment/        # MS-6 Razorpay + Entitlements
+│   └── platform/       # MS-7 Admin + Notifications
+├── shared/             # JWT, events, models, DB/Redis factories, middleware
+├── migrations/
+│   ├── identity/       # Alembic for identity_db
+│   ├── content/        # Alembic for content_db
+│   ├── course/         # Alembic for course_db
+│   ├── payment/        # Alembic for payment_db
+│   └── platform/       # Alembic for platform_db
+├── infra/              # Terraform (VPC, RDS, ECS, Lambda, CloudFront)
+├── scripts/            # setup-dev-env, deploy, seed-data, health-check
+├── .env.example        # Template — copy to .env for local dev
+├── .env.dev.example    # Template — copy to .env.dev for RDS/AWS access
+└── Makefile
+```
+
+---
 
 ## API Versioning
 
 All services expose routes under `/api/v1/`. Health checks at `/health`.
 
+```bash
+curl http://localhost:8002/health
+# {"status": "ok", "service": "content"}
+```
+
+---
+
 ## Infrastructure
 
-See `infra/` for Terraform modules and environments (dev, uat, prod). Deploy via scripts or GitHub Actions.
+See `infra/` for Terraform modules and environment configs (`dev`, `uat`, `prod`).
+Deploy via `scripts/deploy.sh` or GitHub Actions (`.github/workflows/`).

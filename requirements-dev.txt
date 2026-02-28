@@ -1,0 +1,18 @@
+# Dev-only tools — NOT deployed to production
+# Install via: make install-dev  (sets up .venv and installs everything)
+
+# AWS CLI + SDK (for Secrets Manager, S3, etc.)
+awscli>=1.4
+boto3>=1.34
+
+# Postgres client library (for scripts / migration tooling)
+psycopg2-binary>=2.9
+
+# Alembic (database migrations)
+alembic>=1.13
+
+# Testing & linting
+pytest>=7
+pytest-asyncio>=0.23
+httpx>=0.27          # async test client for FastAPI
+ruff>=0.1
