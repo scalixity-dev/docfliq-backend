@@ -4,10 +4,11 @@ AWS MediaConvert — async job submission and polling.
 Adapted from lambdas/video_transcode/mediaconvert_job.py to use aioboto3.
 Produces HLS (720p + 1080p + 4K) + MP4 download + thumbnail.
 
-Output structure in S3:
-  processed/video/{user_id}/{timestamp}/hls/master.m3u8   (HLS master playlist)
-  processed/video/{user_id}/{timestamp}/mp4/download.mp4  (MP4 download)
-  processed/video/{user_id}/{timestamp}/thumb/thumb.0000000.jpg  (thumbnail)
+Output structure in S3 (MediaConvert prepends the input base name):
+  processed/video/{user_id}/{ts}/hls/{ts}.m3u8           (HLS master playlist)
+  processed/video/{user_id}/{ts}/hls/{ts}720p.m3u8       (variant playlists)
+  processed/video/{user_id}/{ts}/mp4/{ts}download.mp4    (MP4 download)
+  processed/video/{user_id}/{ts}/thumb/{ts}thumb.0000000.jpg  (thumbnail)
 """
 from __future__ import annotations
 
@@ -287,6 +288,13 @@ def _extract_completed_result(job: dict, settings: Settings) -> dict:
     bucket = settings.mediaconvert_output_bucket or settings.s3_bucket_media
     result: dict = {"status": "COMPLETED"}
 
+    # MediaConvert prepends the input file's base name to all outputs.
+    # e.g. input "uploads/video/uid/20260227_abc.mp4" → base = "20260227_abc"
+    input_uri = (
+        job.get("Settings", {}).get("Inputs", [{}])[0].get("FileInput", "")
+    )
+    input_base = input_uri.rsplit("/", 1)[-1].rsplit(".", 1)[0] if input_uri else ""
+
     # Extract output group details
     output_groups = job.get("Settings", {}).get("OutputGroups", [])
     for group in output_groups:
@@ -296,17 +304,17 @@ def _extract_completed_result(job: dict, settings: Settings) -> dict:
         if group_name == "HLS":
             dest = group_settings.get("HlsGroupSettings", {}).get("Destination", "")
             if dest:
-                result["hls_url"] = f"{dest}master.m3u8"
+                result["hls_url"] = f"{dest}{input_base}.m3u8"
 
         elif group_name == "MP4":
             dest = group_settings.get("FileGroupSettings", {}).get("Destination", "")
             if dest:
-                result["processed_url"] = f"{dest}download.mp4"
+                result["processed_url"] = f"{dest}{input_base}download.mp4"
 
         elif group_name == "Thumbnails":
             dest = group_settings.get("FileGroupSettings", {}).get("Destination", "")
             if dest:
-                result["thumbnail_url"] = f"{dest}thumb.0000000.jpg"
+                result["thumbnail_url"] = f"{dest}{input_base}thumb.0000000.jpg"
 
     # Duration from input details
     try:
