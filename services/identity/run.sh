@@ -29,7 +29,7 @@ docker run -d \
   --env-file .env \
   --restart unless-stopped \
   "$IMAGE_NAME" \
-  uvicorn app.main:app --host 127.0.0.1 --port "$PORT"
+  uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --root-path /identity
 
 echo "Identity service running at http://127.0.0.1:$PORT"
 echo "Logs: docker logs -f $CONTAINER_NAME"

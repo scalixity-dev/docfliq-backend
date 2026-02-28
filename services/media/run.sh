@@ -29,6 +29,7 @@ docker run -d \
   --env-file .env \
   -e ROLE=api \
   -e PORT=$PORT \
+  -e ROOT_PATH=/media \
   --restart unless-stopped \
   "$IMAGE_NAME"
 

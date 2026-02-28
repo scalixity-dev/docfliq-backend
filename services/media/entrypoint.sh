@@ -10,6 +10,7 @@ case "$ROLE" in
       --host "${HOST:-127.0.0.1}" \
       --port "${PORT:-8005}" \
       --workers "${API_WORKERS:-2}" \
+      --root-path "${ROOT_PATH:-}" \
       --log-level info
     ;;
   worker)
