@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Docfliq Media Service — Docker Compose
+#
+# Usage:
+#   bash docker.sh          # Build + start API + 1 worker
+#   bash docker.sh --scale  # Build + start API + 3 workers
+#   bash docker.sh down     # Stop everything
+#
+# Redis + PostgreSQL are external (from host / .env).
+# Uses host networking so containers can reach localhost services.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── API Server ──────────────────────────────────────────────────────────────
+  media-api:
+    build:
+      context: ../../          # repo root (needs shared/)
+      dockerfile: services/media/Dockerfile
+    container_name: docfliq-media-api
+    env_file: ../../.env
+    environment:
+      ROLE: api
+      PORT: "8005"
+      API_WORKERS: "2"         # Uvicorn workers (2 per CPU core is good)
+    network_mode: host         # Access host Redis, RDS, etc.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # ── Worker (media processing) ───────────────────────────────────────────────
+  media-worker:
+    build:
+      context: ../../
+      dockerfile: services/media/Dockerfile
+    env_file: ../../.env
+    environment:
+      ROLE: worker
+    network_mode: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G            # Workers need more memory (Pillow, S3 downloads)
+          cpus: "1.0"
+      replicas: 1               # Default: 1 worker. Scale with docker.sh --scale
