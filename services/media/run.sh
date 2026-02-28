@@ -2,40 +2,35 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$BACKEND_ROOT"
 
-echo "🚀 Docfliq Media Processing — setup and run"
-
-# Ensure uv is available
-if ! command -v uv &> /dev/null; then
-    echo "❌ uv is not installed. Install from https://docs.astral.sh/uv/getting-started/installation/"
-    exit 1
-fi
-
-# Create venv if missing
-if [ ! -d ".venv" ]; then
-    echo "📦 Creating virtual environment..."
-    uv venv
-fi
-
-# Sync dependencies (includes editable docfliq-shared from ../../shared)
-echo "📥 Syncing dependencies..."
-uv sync
-
-# Free port 8005 if already in use
+IMAGE_NAME="docfliq-media"
+CONTAINER_NAME="docfliq-media"
 PORT=8005
-if command -v lsof &> /dev/null; then
-  PID=$(lsof -ti:"$PORT" 2>/dev/null) || true
-  if [ -n "$PID" ]; then
-    echo "🔌 Killing process $PID on port $PORT..."
-    kill $PID 2>/dev/null || true
-    sleep 1
-  fi
-elif command -v fuser &> /dev/null; then
-  fuser -k "$PORT/tcp" 2>/dev/null || true
-  sleep 1
+
+# Stop existing container if running
+if docker ps -q -f name="$CONTAINER_NAME" | grep -q .; then
+  echo "Stopping existing $CONTAINER_NAME container..."
+  docker stop "$CONTAINER_NAME" && docker rm "$CONTAINER_NAME"
+elif docker ps -aq -f name="$CONTAINER_NAME" | grep -q .; then
+  docker rm "$CONTAINER_NAME"
 fi
 
-# Run media service (port 8005)
-echo "✨ Starting Media Processing service on http://0.0.0.0:8005"
-exec uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8005 "$@"
+# Build image
+echo "Building $IMAGE_NAME..."
+docker build -f services/media/Dockerfile -t "$IMAGE_NAME" .
+
+# Run with host networking, bind to 127.0.0.1 (not exposed externally)
+echo "Starting $CONTAINER_NAME on 127.0.0.1:$PORT..."
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  --network host \
+  --env-file .env \
+  -e ROLE=api \
+  -e PORT=$PORT \
+  --restart unless-stopped \
+  "$IMAGE_NAME"
+
+echo "Media service running at http://127.0.0.1:$PORT"
+echo "Logs: docker logs -f $CONTAINER_NAME"

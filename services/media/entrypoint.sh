@@ -7,7 +7,7 @@ case "$ROLE" in
   api)
     echo "[media] Starting API server on port ${PORT:-8005}"
     exec python -m uvicorn app.main:app \
-      --host 0.0.0.0 \
+      --host "${HOST:-127.0.0.1}" \
       --port "${PORT:-8005}" \
       --workers "${API_WORKERS:-2}" \
       --log-level info
