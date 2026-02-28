@@ -73,9 +73,13 @@ def get_settings() -> Settings:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app import task_queue
+
     settings = get_settings()
     init_db(settings.media_database_url)
+    await task_queue.init_pool(settings.redis_url)
     yield
+    await task_queue.close_pool()
 
 
 def create_app() -> FastAPI:
