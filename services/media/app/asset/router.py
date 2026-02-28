@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,12 +68,11 @@ async def request_upload(
 )
 async def confirm_upload(
     request: ConfirmUploadRequest,
-    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(_get_settings),
 ) -> AssetResponse:
-    return await controller.confirm_upload(request, user, db, settings, background_tasks)
+    return await controller.confirm_upload(request, user, db, settings)
 
 
 # ── Asset CRUD ───────────────────────────────────────────────────────────────

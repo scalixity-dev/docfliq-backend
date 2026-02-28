@@ -8,7 +8,14 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 def init_db(database_url: str) -> None:
     global _session_factory
-    _session_factory = get_async_session_factory(database_url, expire_on_commit=False)
+    # Media service needs a larger pool because background tasks (image
+    # processing, video polling) run concurrently alongside request handlers.
+    _session_factory = get_async_session_factory(
+        database_url,
+        expire_on_commit=False,
+        pool_size=10,
+        max_overflow=20,
+    )
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

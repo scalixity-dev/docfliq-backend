@@ -31,15 +31,15 @@ def _build_ssl_connect_args() -> dict[str, Any]:
 
 def get_async_engine(database_url: str, **kwargs: Any) -> Any:
     ssl_kwargs = _build_ssl_connect_args()
-    merged = {**ssl_kwargs, **kwargs}
-    return create_async_engine(
-        database_url,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=3600,
-        **merged,
-    )
+    # Defaults that can be overridden by caller kwargs
+    defaults = {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_recycle": 3600,
+    }
+    merged = {**defaults, **ssl_kwargs, **kwargs}
+    return create_async_engine(database_url, **merged)
 
 
 def get_async_session_factory(
